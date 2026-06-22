@@ -66,4 +66,10 @@ const (
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"
+
+	/* SinoWhaleX integration keys (Plan C) */
+	ContextKeySWXUserId    ContextKey = "swx_user_id"
+	ContextKeySWXTraceId   ContextKey = "swx_trace_id"
+	ContextKeySWXBizType   ContextKey = "swx_biz_type"
+	ContextKeySWXRequestId ContextKey = "swx_request_id"
 )

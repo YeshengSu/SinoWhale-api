@@ -2,7 +2,9 @@ package controller
 
 import (
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -22,7 +24,11 @@ func GetAllLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId)
+	swxUserId, swxTraceId, swxBizType, ok := resolveSWXLogQuery(c)
+	if !ok {
+		return
+	}
+	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId, swxUserId, swxTraceId, swxBizType)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -44,7 +50,11 @@ func GetUserLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
-	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, upstreamRequestId)
+	swxUserId, swxTraceId, swxBizType, ok := resolveSWXLogQuery(c)
+	if !ok {
+		return
+	}
+	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, upstreamRequestId, swxUserId, swxTraceId, swxBizType)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -53,6 +63,43 @@ func GetUserLogs(c *gin.Context) {
 	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+// resolveSWXLogQuery 解析 SWX 维度查询参数，并根据 SWX_HEADER_LOG_QUERY_ROLE 校验调用方角色。
+// 当查询参数全为空时直接放行（向前兼容）；
+// 当存在 swx_* 参数但调用方角色不足时，返回 403 swx_disabled。
+func resolveSWXLogQuery(c *gin.Context) (string, string, string, bool) {
+	swxUserId := strings.TrimSpace(c.Query("swx_user_id"))
+	swxTraceId := strings.TrimSpace(c.Query("swx_trace_id"))
+	swxBizType := strings.TrimSpace(c.Query("swx_biz_type"))
+	if swxUserId == "" && swxTraceId == "" && swxBizType == "" {
+		return "", "", "", true
+	}
+	required := strings.ToLower(strings.TrimSpace(os.Getenv("SWX_HEADER_LOG_QUERY_ROLE")))
+	if required == "" {
+		required = "admin"
+	}
+	role := c.GetInt("role")
+	allowed := false
+	switch required {
+	case "any":
+		allowed = true
+	case "root":
+		allowed = role >= common.RoleRootUser
+	case "admin":
+		fallthrough
+	default:
+		allowed = role >= common.RoleAdminUser
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": "SWX 集成未启用或无权查询 SWX 维度日志",
+			"code":    "swx_disabled",
+		})
+		return "", "", "", false
+	}
+	return swxUserId, swxTraceId, swxBizType, true
 }
 
 // Deprecated: SearchAllLogs 已废弃，前端未使用该接口。

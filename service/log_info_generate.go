@@ -79,6 +79,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendBillingInfo(relayInfo, other)
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
+	appendSWXContext(ctx, other)
 	return other
 }
 
@@ -262,6 +263,7 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData types.Price
 		other["user_group_ratio"] = priceData.GroupRatioInfo.GroupSpecialRatio
 	}
 	appendRequestPath(nil, relayInfo, other)
+	appendSWXContext(nil, other)
 	return other
 }
 
@@ -280,5 +282,26 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 	other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
 	if result != nil {
 		other["matched_tier"] = result.MatchedTier
+	}
+}
+
+// appendSWXContext 将 SinoWhaleX 透传 Header 写入日志 other map（方案 C）。
+// 仅当对应 Context Key 非空时才写入，避免污染既有日志结构。
+// ctx 为 nil 时退化为 noop（用于 Mj 等无 ctx 的场景）。
+func appendSWXContext(ctx *gin.Context, other map[string]interface{}) {
+	if ctx == nil || other == nil {
+		return
+	}
+	if v := common.GetContextKeyString(ctx, constant.ContextKeySWXUserId); v != "" {
+		other["swx_user_id"] = v
+	}
+	if v := common.GetContextKeyString(ctx, constant.ContextKeySWXTraceId); v != "" {
+		other["swx_trace_id"] = v
+	}
+	if v := common.GetContextKeyString(ctx, constant.ContextKeySWXBizType); v != "" {
+		other["swx_biz_type"] = v
+	}
+	if v := common.GetContextKeyString(ctx, constant.ContextKeySWXRequestId); v != "" {
+		other["swx_request_id"] = v
 	}
 }

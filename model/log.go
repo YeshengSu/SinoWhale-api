@@ -315,7 +315,35 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+// applySWXFilter 为 logs 查询追加 SinoWhaleX 维度过滤条件（方案 C）。
+// 仅当对应参数非空时才追加，按 JSON 字段 logs.other 内的 swx_* 键过滤。
+// 不同数据库使用不同的 JSON 函数：PostgreSQL/SQLite 使用 JSON 路径运算符，MySQL 使用 JSON_EXTRACT。
+func applySWXFilter(tx *gorm.DB, swxUserId, swxTraceId, swxBizType string) *gorm.DB {
+	type pair struct {
+		key string
+		val string
+	}
+	pairs := []pair{
+		{"swx_user_id", swxUserId},
+		{"swx_trace_id", swxTraceId},
+		{"swx_biz_type", swxBizType},
+	}
+	for _, p := range pairs {
+		if p.val == "" {
+			continue
+		}
+		switch {
+		case common.UsingPostgreSQL:
+			tx = tx.Where("logs.other::jsonb ->> ? = ?", p.key, p.val)
+		default:
+			// MySQL / SQLite 共用 JSON_UNQUOTE + JSON_EXTRACT 语法
+			tx = tx.Where("JSON_UNQUOTE(JSON_EXTRACT(logs.other, ?)) = ?", "$."+p.key, p.val)
+		}
+	}
+	return tx
+}
+
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, swxUserId string, swxTraceId string, swxBizType string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -350,6 +378,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
+	tx = applySWXFilter(tx, swxUserId, swxTraceId, swxBizType)
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
 		return nil, 0, err
@@ -404,7 +433,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
-func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string, swxUserId string, swxTraceId string, swxBizType string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -433,6 +462,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
+	tx = applySWXFilter(tx, swxUserId, swxTraceId, swxBizType)
 	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())

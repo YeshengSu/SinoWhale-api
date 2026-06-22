@@ -1,0 +1,53 @@
+-- SinoWhaleX 方案 C：日志 swx_user_id / swx_trace_id / swx_biz_type 索引脚本
+--
+-- 用途：
+--   在启用 SWX_HEADER_ENABLED=true 并产生足量日志后执行，加速
+--   `/api/log/?swx_user_id=...` 等按 SWX 维度过滤的查询。
+--
+-- 约束：
+--   * 严禁修改 logs 表已有 DDL，索引通过 JSON 函数索引 / 虚拟列实现，保证回滚成本可控。
+--   * 请根据实际数据库类型选择对应的 SQL 段执行，不要全部执行。
+--
+-- ===============================================================
+-- 1. MySQL 8.0+：通过 STORED/VIRTUAL 生成列建立二级索引
+-- ===============================================================
+-- ALTER TABLE logs
+--   ADD COLUMN swx_user_id_v VARCHAR(64)
+--     GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(other, '$.swx_user_id'))) VIRTUAL,
+--   ADD INDEX idx_logs_swx_user_id (swx_user_id_v);
+--
+-- ALTER TABLE logs
+--   ADD COLUMN swx_trace_id_v VARCHAR(128)
+--     GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(other, '$.swx_trace_id'))) VIRTUAL,
+--   ADD INDEX idx_logs_swx_trace_id (swx_trace_id_v);
+--
+-- ALTER TABLE logs
+--   ADD COLUMN swx_biz_type_v VARCHAR(32)
+--     GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(other, '$.swx_biz_type'))) VIRTUAL,
+--   ADD INDEX idx_logs_swx_biz_type (swx_biz_type_v);
+
+-- ===============================================================
+-- 2. PostgreSQL 12+：通过 JSONB 函数表达式索引
+-- ===============================================================
+-- 注意：聚合平台 logs.other 默认存储为 TEXT/JSON，需要 cast 为 jsonb。
+-- 如果 other 列已是 jsonb 类型，可去掉 ::jsonb。
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_user_id
+--   ON logs ((other::jsonb ->> 'swx_user_id'));
+--
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_trace_id
+--   ON logs ((other::jsonb ->> 'swx_trace_id'));
+--
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_biz_type
+--   ON logs ((other::jsonb ->> 'swx_biz_type'));
+
+-- ===============================================================
+-- 3. SQLite：JSON1 扩展函数索引
+-- ===============================================================
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_user_id
+--   ON logs (json_extract(other, '$.swx_user_id'));
+--
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_trace_id
+--   ON logs (json_extract(other, '$.swx_trace_id'));
+--
+-- CREATE INDEX IF NOT EXISTS idx_logs_swx_biz_type
+--   ON logs (json_extract(other, '$.swx_biz_type'));

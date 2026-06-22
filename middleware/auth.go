@@ -402,6 +402,10 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		extractSWXContext(c)
+		if c.IsAborted() {
+			return
+		}
 		c.Next()
 	}
 }
