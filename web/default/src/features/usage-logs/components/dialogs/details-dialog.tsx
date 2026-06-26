@@ -850,6 +850,42 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <TokenBreakdown log={props.log} other={other} />
             )}
 
+            {/* SinoWhaleX integration (Plan C) - SWX 用户维度透传信息 */}
+            {(other?.swx_user_id ||
+              other?.swx_trace_id ||
+              other?.swx_biz_type ||
+              other?.swx_request_id) && (
+              <DetailSection
+                icon={<Cloud className='size-3.5' aria-hidden='true' />}
+                label='SWX 集成信息'
+              >
+                <DetailRow
+                  label='用户ID'
+                  value={other?.swx_user_id || '未设置'}
+                  mono
+                  muted={!other?.swx_user_id}
+                />
+                <DetailRow
+                  label='链路ID'
+                  value={other?.swx_trace_id || '未设置'}
+                  mono
+                  muted={!other?.swx_trace_id}
+                />
+                <DetailRow
+                  label='业务类型'
+                  value={other?.swx_biz_type || '未设置'}
+                  mono
+                  muted={!other?.swx_biz_type}
+                />
+                <DetailRow
+                  label='请求ID'
+                  value={other?.swx_request_id || '未设置'}
+                  mono
+                  muted={!other?.swx_request_id}
+                />
+              </DetailSection>
+            )}
+
             {/* Billing breakdown (consume type) */}
             {isConsume && other && !isViolation && (
               <BillingBreakdown

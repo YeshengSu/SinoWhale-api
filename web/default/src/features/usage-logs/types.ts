@@ -189,6 +189,11 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+  // SinoWhaleX integration (Plan C) - propagated from X-SWX-* headers
+  swx_user_id?: string
+  swx_trace_id?: string
+  swx_biz_type?: string
+  swx_request_id?: string
 }
 
 /**

@@ -1,73 +1,83 @@
-# Frontend Development - Backend built from local source
+# SinoWhale-api 本地开发环境（方案C 联调）
 #
-# Usage:
-#   1. docker compose -f docker-compose.dev.yml up -d
-#   2. cd web && bun install && bun run dev
-#   3. Open http://localhost:3001 (Rsbuild dev server, API auto-proxied to :3000)
+# 使用方式：
+#   启动:  docker-compose -f docker-compose.dev.yml up -d
+#   停止:  docker-compose -f docker-compose.dev.yml down
+#   重建:  docker-compose -f docker-compose.dev.yml up -d --build
+#   日志:  docker-compose -f docker-compose.dev.yml logs -f new-api
 #
-# Rebuild backend after Go code changes:
-#   docker compose -f docker-compose.dev.yml up -d --build new-api
-#
-# Stop:
-#   docker compose -f docker-compose.dev.yml down
-#
-# Reset data:
-#   docker compose -f docker-compose.dev.yml down -v
+# 注意：本文件仅用于本地开发，不要部署到生产环境。
+#       生产部署请走 docker push/pull + 远端 compose 流程。
 
 services:
-  new-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    image: new-api-dev:local
-    container_name: new-api-dev
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - dev_data:/data
-    environment:
-      - SQL_DSN=postgresql://root:123456@postgres:5432/new-api
-      - REDIS_CONN_STRING=redis://redis
-      - TZ=Asia/Shanghai
-      - BATCH_UPDATE_ENABLED=true
-    depends_on:
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    networks:
-      - dev-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: new-api-dev-redis
-    restart: unless-stopped
-    networks:
-      - dev-network
-
   postgres:
-    image: postgres:15-alpine
-    container_name: new-api-dev-pg
+    image: postgres:15
+    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123456
+      POSTGRES_PASSWORD: '123456'
       POSTGRES_DB: new-api
+      TZ: Asia/Shanghai
     volumes:
-      - dev_pg_data:/var/lib/postgresql/data
+      - sinowhale-api_pg_data:/var/lib/postgresql/data
     networks:
-      - dev-network
+      - new-api-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d new-api"]
-      interval: 5s
-      timeout: 3s
+      test: ['CMD-SHELL', 'pg_isready -U root -d new-api']
+      interval: 10s
+      timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --requirepass 123456
+    networks:
+      - new-api-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '123456', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  new-api:
+    image: new-api-plan-c
+    container_name: new-api
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3088:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SQL_DSN: 'postgresql://root:123456@postgres:5432/new-api'
+      REDIS_CONN_STRING: 'redis://:123456@redis:6379'
+      # SWX 方案C 集成开关
+      SWX_HEADER_ENABLED: 'true'
+      SWX_HEADER_STRICT: 'false'
+      SWX_HEADER_LOG_QUERY_ROLE: 'admin'
+      # 通用
+      TZ: 'Asia/Shanghai'
+      ERROR_LOG_ENABLED: 'true'
+      BATCH_UPDATE_ENABLED: 'true'
+      NODE_NAME: 'new-api-node-1'
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    networks:
+      - new-api-network
+
 volumes:
-  dev_data:
-  dev_pg_data:
+  sinowhale-api_pg_data:
+    external: true
 
 networks:
-  dev-network:
-    driver: bridge
+  new-api-network:
+    name: sinowhale-api_new-api-network
