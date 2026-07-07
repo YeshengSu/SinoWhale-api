@@ -72,4 +72,10 @@ const (
 	ContextKeySWXTraceId   ContextKey = "swx_trace_id"
 	ContextKeySWXBizType   ContextKey = "swx_biz_type"
 	ContextKeySWXRequestId ContextKey = "swx_request_id"
+
+	// ContextKeyAuditLogged marks that the current request has already recorded
+	// a manage/operation audit log inside the handler. When set, the admin-audit
+	// fallback in authHelper (finishAdminAudit) skips its record to avoid
+	// duplicate entries.
+	ContextKeyAuditLogged ContextKey = "audit_logged"
 )
