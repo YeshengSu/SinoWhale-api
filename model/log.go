@@ -483,7 +483,7 @@ func applySWXFilter(tx *gorm.DB, swxUserId, swxTraceId, swxBizType string) *gorm
 			continue
 		}
 		switch {
-		case common.UsingPostgreSQL:
+		case common.UsingLogDatabase(common.DatabaseTypePostgreSQL):
 			tx = tx.Where("logs.other::jsonb ->> ? = ?", p.key, p.val)
 		default:
 			// MySQL / SQLite 共用 JSON_UNQUOTE + JSON_EXTRACT 语法

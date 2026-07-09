@@ -212,7 +212,7 @@ export function formatGroupPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = groupRatio[group] ?? 1
   let priceInUSD = calculateTokenPrice(model, type, ratio)
 
   priceInUSD = applyRechargeRate(
@@ -245,7 +245,7 @@ export function formatFixedPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = groupRatio[group] ?? 1
   let priceInUSD = (model.model_price || 0) * ratio
 
   priceInUSD = applyRechargeRate(

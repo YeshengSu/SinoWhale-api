@@ -64,7 +64,7 @@ const ModelPricingTable = ({
 
       // 获取分组倍率
       const groupRatioValue =
-        groupRatio && groupRatio[group] ? groupRatio[group] : 1;
+        groupRatio?.[group] ?? 1;
 
       return {
         key: group,

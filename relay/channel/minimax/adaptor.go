@@ -33,48 +33,63 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
-	if info.RelayMode != constant.RelayModeAudioSpeech {
+	switch info.RelayMode {
+	case constant.RelayModeAudioSpeech:
+		// 原有 TTS 逻辑
+		voiceID := request.Voice
+		speed := lo.FromPtrOr(request.Speed, 0.0)
+		outputFormat := request.ResponseFormat
+
+		minimaxRequest := MiniMaxTTSRequest{
+			Model: info.OriginModelName,
+			Text:  request.Input,
+			VoiceSetting: VoiceSetting{
+				VoiceID: voiceID,
+				Speed:   speed,
+			},
+			AudioSetting: &AudioSetting{
+				Format: outputFormat,
+			},
+			OutputFormat: outputFormat,
+		}
+
+		if len(request.Metadata) > 0 {
+			if err := json.Unmarshal(request.Metadata, &minimaxRequest); err != nil {
+				return nil, fmt.Errorf("error unmarshalling metadata to minimax request: %w", err)
+			}
+		}
+
+		jsonData, err := json.Marshal(minimaxRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling minimax request: %w", err)
+		}
+		if outputFormat != "hex" {
+			outputFormat = "url"
+		}
+
+		c.Set("response_format", outputFormat)
+
+		return bytes.NewReader(jsonData), nil
+
+	case constant.RelayModeMusicGeneration:
+		minimaxRequest := audioRequest2MiniMaxMusicRequest(request, info.OriginModelName)
+		jsonData, err := json.Marshal(minimaxRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling minimax music request: %w", err)
+		}
+		return bytes.NewReader(jsonData), nil
+
+	case constant.RelayModeLyricsGeneration:
+		minimaxRequest := audioRequest2MiniMaxLyricsRequest(request)
+		jsonData, err := json.Marshal(minimaxRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling minimax lyrics request: %w", err)
+		}
+		return bytes.NewReader(jsonData), nil
+
+	default:
 		return nil, errors.New("unsupported audio relay mode")
 	}
-
-	voiceID := request.Voice
-	speed := lo.FromPtrOr(request.Speed, 0.0)
-	outputFormat := request.ResponseFormat
-
-	minimaxRequest := MiniMaxTTSRequest{
-		Model: info.OriginModelName,
-		Text:  request.Input,
-		VoiceSetting: VoiceSetting{
-			VoiceID: voiceID,
-			Speed:   speed,
-		},
-		AudioSetting: &AudioSetting{
-			Format: outputFormat,
-		},
-		OutputFormat: outputFormat,
-	}
-
-	// 同步扩展字段的厂商自定义metadata
-	if len(request.Metadata) > 0 {
-		if err := json.Unmarshal(request.Metadata, &minimaxRequest); err != nil {
-			return nil, fmt.Errorf("error unmarshalling metadata to minimax request: %w", err)
-		}
-	}
-
-	jsonData, err := json.Marshal(minimaxRequest)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling minimax request: %w", err)
-	}
-	if outputFormat != "hex" {
-		outputFormat = "url"
-	}
-
-	c.Set("response_format", outputFormat)
-
-	// Debug: log the request structure
-	// fmt.Printf("MiniMax TTS Request: %s\n", string(jsonData))
-
-	return bytes.NewReader(jsonData), nil
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
@@ -121,6 +136,12 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if info.RelayMode == constant.RelayModeMusicGeneration {
+		return handleMusicResponse(c, resp, info)
+	}
+	if info.RelayMode == constant.RelayModeLyricsGeneration {
+		return handleLyricsResponse(c, resp, info)
+	}
 	if info.RelayMode == constant.RelayModeAudioSpeech {
 		return handleTTSResponse(c, resp, info)
 	}
