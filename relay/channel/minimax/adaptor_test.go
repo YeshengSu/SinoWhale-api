@@ -2,6 +2,7 @@ package minimax
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,6 +121,42 @@ func TestDoResponseForImageGeneration(t *testing.T) {
 	}
 }
 
+func TestGetRequestURLForMusicGeneration(t *testing.T) {
+	t.Parallel()
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeMusicGeneration,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://api.minimax.chat",
+		},
+	}
+	got, err := GetRequestURL(info)
+	if err != nil {
+		t.Fatalf("GetRequestURL returned error: %v", err)
+	}
+	want := "https://api.minimax.chat/v1/music_generation"
+	if got != want {
+		t.Fatalf("GetRequestURL() = %q, want %q", got, want)
+	}
+}
+
+func TestGetRequestURLForLyricsGeneration(t *testing.T) {
+	t.Parallel()
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeLyricsGeneration,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://api.minimax.chat",
+		},
+	}
+	got, err := GetRequestURL(info)
+	if err != nil {
+		t.Fatalf("GetRequestURL returned error: %v", err)
+	}
+	want := "https://api.minimax.chat/v1/lyrics_generation"
+	if got != want {
+		t.Fatalf("GetRequestURL() = %q, want %q", got, want)
+	}
+}
+
 type nopReadCloser struct {
 	*strings.Reader
 }
@@ -134,4 +171,76 @@ func ioNopCloser(body string) nopReadCloser {
 
 func uintPtr(v uint) *uint {
 	return &v
+}
+
+func TestConvertAudioRequest_MusicGeneration(t *testing.T) {
+	t.Parallel()
+	adaptor := &Adaptor{}
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeMusicGeneration,
+		OriginModelName: "music-2.6",
+	}
+	request := dto.AudioRequest{
+		Model:  "music-2.6",
+		Prompt: "独立民谣,忧郁",
+		Lyrics: "[verse]\n街灯微亮",
+	}
+
+	reader, err := adaptor.ConvertAudioRequest(
+		gin.CreateTestContextOnly(httptest.NewRecorder(), gin.New()),
+		info,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("ConvertAudioRequest returned error: %v", err)
+	}
+
+	body, _ := io.ReadAll(reader)
+	var minimaxReq MiniMaxMusicRequest
+	if err := json.Unmarshal(body, &minimaxReq); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if minimaxReq.Model != "music-2.6" {
+		t.Errorf("Model = %q, want %q", minimaxReq.Model, "music-2.6")
+	}
+	if minimaxReq.Prompt != "独立民谣,忧郁" {
+		t.Errorf("Prompt = %q, want %q", minimaxReq.Prompt, "独立民谣,忧郁")
+	}
+	if minimaxReq.Lyrics != "[verse]\n街灯微亮" {
+		t.Errorf("Lyrics mismatch")
+	}
+}
+
+func TestConvertAudioRequest_LyricsGeneration(t *testing.T) {
+	t.Parallel()
+	adaptor := &Adaptor{}
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeLyricsGeneration,
+		OriginModelName: "minimax-lyrics",
+	}
+	request := dto.AudioRequest{
+		Model:  "minimax-lyrics",
+		Prompt: "一首欢乐的新年歌曲",
+	}
+
+	reader, err := adaptor.ConvertAudioRequest(
+		gin.CreateTestContextOnly(httptest.NewRecorder(), gin.New()),
+		info,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("ConvertAudioRequest returned error: %v", err)
+	}
+
+	body, _ := io.ReadAll(reader)
+	var minimaxReq MiniMaxLyricsRequest
+	if err := json.Unmarshal(body, &minimaxReq); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if minimaxReq.Prompt != "一首欢乐的新年歌曲" {
+		t.Errorf("Prompt = %q, want %q", minimaxReq.Prompt, "一首欢乐的新年歌曲")
+	}
+	if minimaxReq.Mode != "write_full_song" {
+		t.Errorf("Mode = %q, want %q", minimaxReq.Mode, "write_full_song")
+	}
 }

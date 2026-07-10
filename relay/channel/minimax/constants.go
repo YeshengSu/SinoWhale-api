@@ -23,6 +23,13 @@ var ModelList = []string{
 	"MiniMax-M2.5-highspeed",
 	"image-01",
 	"image-01-live",
+	// 音乐生成模型
+	"music-2.6",
+	"music-cover",
+	"music-2.6-free",
+	"music-cover-free",
+	// 歌词生成模型（SWAPI 内部路由用，非 minimax 原生模型名）
+	"minimax-lyrics",
 }
 
 var ChannelName = "minimax"

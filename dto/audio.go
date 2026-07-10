@@ -17,7 +17,14 @@ type AudioRequest struct {
 	ResponseFormat string          `json:"response_format,omitempty"`
 	Speed          *float64        `json:"speed,omitempty"`
 	StreamFormat   string          `json:"stream_format,omitempty"`
-	Metadata       json.RawMessage `json:"metadata,omitempty"`
+	// 音乐生成扩展字段（minimax music_generation）
+	// prompt: 音乐风格描述，如 "流行音乐, 难过, 适合在下雨的晚上"
+	Prompt   string          `json:"prompt,omitempty"`
+	// lyrics: 歌词内容，支持结构标签 [Verse] [Chorus] 等
+	Lyrics   string          `json:"lyrics,omitempty"`
+	// output_format: 返回格式，"url" 返回下载链接，否则返回二进制音频
+	OutputFormat string          `json:"output_format,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 	// vllm-omini
 	TaskType                json.RawMessage `json:"task_type,omitempty"`
 	Language                json.RawMessage `json:"language,omitempty"`

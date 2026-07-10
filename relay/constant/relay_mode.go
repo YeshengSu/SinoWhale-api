@@ -52,6 +52,9 @@ const (
 	RelayModeGemini
 
 	RelayModeResponsesCompact
+
+	RelayModeMusicGeneration  // minimax 音乐生成
+	RelayModeLyricsGeneration // minimax 歌词生成
 )
 
 func Path2RelayMode(path string) int {
@@ -86,6 +89,10 @@ func Path2RelayMode(path string) int {
 		relayMode = RelayModeRerank
 	} else if strings.HasPrefix(path, "/v1/realtime") {
 		relayMode = RelayModeRealtime
+	} else if strings.HasPrefix(path, "/v1/music_generation") {
+		relayMode = RelayModeMusicGeneration
+	} else if strings.HasPrefix(path, "/v1/lyrics_generation") {
+		relayMode = RelayModeLyricsGeneration
 	} else if strings.HasPrefix(path, "/v1beta/models") || strings.HasPrefix(path, "/v1/models") {
 		relayMode = RelayModeGemini
 	} else if strings.HasPrefix(path, "/mj") {

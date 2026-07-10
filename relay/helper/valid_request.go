@@ -66,6 +66,21 @@ func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, 
 		if audioRequest.Model == "" {
 			return nil, errors.New("model is required")
 		}
+	case relayconstant.RelayModeMusicGeneration:
+		if audioRequest.Model == "" {
+			return nil, errors.New("model is required")
+		}
+		// 兼容：允许用 input 字段传 prompt
+		if audioRequest.Prompt == "" && audioRequest.Input != "" {
+			audioRequest.Prompt = audioRequest.Input
+		}
+	case relayconstant.RelayModeLyricsGeneration:
+		if audioRequest.Model == "" {
+			return nil, errors.New("model is required")
+		}
+		if audioRequest.Prompt == "" && audioRequest.Input != "" {
+			audioRequest.Prompt = audioRequest.Input
+		}
 	default:
 		if audioRequest.Model == "" {
 			return nil, errors.New("model is required")
