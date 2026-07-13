@@ -77,7 +77,6 @@ services:
 
 volumes:
   sinowhale-api_pg_data:
-    external: true
 
 networks:
   new-api-network:
