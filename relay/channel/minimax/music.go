@@ -38,6 +38,7 @@ type MiniMaxMusicRequest struct {
 type MiniMaxLyricsRequest struct {
 	Mode   string `json:"mode"`
 	Prompt string `json:"prompt"`
+	Lyrics string `json:"lyrics,omitempty"` // edit 模式必传，已有歌词内容
 }
 
 // ── 响应类型 ──────────────────────────────────────────────────────
@@ -62,13 +63,12 @@ type MusicExtraInfo struct {
 }
 
 // MiniMaxLyricsResponse 对应 minimax /v1/lyrics_generation 响应
+// 注意：MiniMax 歌词生成的 lyrics/song_title/style_tags 在顶层，不在 data 内
 type MiniMaxLyricsResponse struct {
-	Data struct {
-		Lyrics string `json:"lyrics"`
-		Title  string `json:"title"`
-	} `json:"data"`
-	TraceID  string          `json:"trace_id"`
-	BaseResp MiniMaxBaseResp `json:"base_resp"`
+	Lyrics    string          `json:"lyrics"`
+	SongTitle string          `json:"song_title"`
+	StyleTags string          `json:"style_tags"`
+	BaseResp  MiniMaxBaseResp `json:"base_resp"`
 }
 
 // ── 请求转换 ──────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ func handleMusicResponse(c *gin.Context, resp *http.Response, info *relaycommon.
 
 	// 输出音频（与 TTS 处理逻辑一致）
 	if strings.HasPrefix(minimaxResp.Data.Audio, "http") {
-		// url 格式：返回 JSON
+		// url 格式：返回 JSON（统一格式：业务字段在 data 内，base_resp 在顶层）
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
 				"audio":  minimaxResp.Data.Audio,
@@ -172,6 +172,7 @@ func handleMusicResponse(c *gin.Context, resp *http.Response, info *relaycommon.
 			},
 			"extra_info": minimaxResp.ExtraInfo,
 			"trace_id":   minimaxResp.TraceID,
+			"base_resp":  minimaxResp.BaseResp,
 		})
 	} else {
 		// hex 格式：解码为二进制音频
@@ -225,8 +226,15 @@ func handleLyricsResponse(c *gin.Context, resp *http.Response, info *relaycommon
 		)
 	}
 
-	// 透传 minimax 响应
-	c.JSON(http.StatusOK, minimaxResp)
+	// 统一格式：业务字段包裹在 data 内，与音乐生成响应格式一致
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"lyrics":     minimaxResp.Lyrics,
+			"title":      minimaxResp.SongTitle,
+			"style_tags": minimaxResp.StyleTags,
+		},
+		"base_resp": minimaxResp.BaseResp,
+	})
 
 	// 按次计费
 	usage = &dto.Usage{

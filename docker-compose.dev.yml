@@ -68,6 +68,7 @@ services:
       ERROR_LOG_ENABLED: 'true'
       BATCH_UPDATE_ENABLED: 'true'
       NODE_NAME: 'new-api-node-1'
+      SESSION_SECRET: 'b718992e19283710f82b6d9dfbdf7cc3aed80b5cc4080546a353167a17d17169'  # 固定 Session 密钥，防止重启后登录失效
     volumes:
       - ./data:/data
       - ./logs:/app/logs
