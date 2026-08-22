@@ -60,12 +60,12 @@ if ($Version -notmatch '^(v\d+\.\d+\.\d+([.-].+)?|test)$') {
 Write-Host "[OK] Using version: $Version" -ForegroundColor Green
 
 # ========== 路径计算 ==========
-$SourceFile = Join-Path $ProjectRoot "dist\deploy-bundle-$Version.tar.gz"
+$SourceFile = Join-Path $ProjectRoot "dist\swapi-deploy-bundle-$Version.tar.gz"
 $VersionSlug = ($Version -replace '[^A-Za-z0-9]', '')      # remote 目录名只保留字母数字
 $RemoteDir = "/tmp/swapi-chunks-$VersionSlug"
 $ChunkSize = 50MB
 $ChunkDir = Join-Path $env:TEMP "swapi-chunks-$VersionSlug"
-$RemoteTarget = "/opt/deploy-bundle-$Version.tar.gz"
+$RemoteTarget = "/opt/swapi-deploy-bundle-$Version.tar.gz"
 
 if (-not (Test-Path $SourceFile)) {
     Write-Host "[ERROR] Source deploy-bundle not found: $SourceFile" -ForegroundColor Red

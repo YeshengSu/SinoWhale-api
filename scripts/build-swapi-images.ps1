@@ -111,8 +111,9 @@ Write-Host "  ok  $TarFile" -ForegroundColor Green
 Write-Host ""
 Write-Host "[3/3] Creating deploy bundle..." -ForegroundColor Yellow
 
-$BundleDir = $DistDir + "\deploy-bundle-" + $Version
-$BundlePkg = $DistDir + "\deploy-bundle-" + $Version + ".tar.gz"
+# 命名带 swapi- 前缀，避免与同服务器 /opt 下的 SWX deploy-bundle-* 目录冲突
+$BundleDir = $DistDir + "\swapi-deploy-bundle-" + $Version
+$BundlePkg = $DistDir + "\swapi-deploy-bundle-" + $Version + ".tar.gz"
 
 # clean old bundle
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -168,7 +169,7 @@ Write-Host "  Packaging bundle..." -ForegroundColor Yellow
 
 Push-Location $DistDir
 try {
-  tar -czf $BundlePkg ("deploy-bundle-" + $Version)
+  tar -czf $BundlePkg ("swapi-deploy-bundle-" + $Version)
   Write-Host "  Bundle created: $BundlePkg" -ForegroundColor Green
 } catch {
   Write-Host "  WARN: tar -czf failed, creating zip instead" -ForegroundColor Yellow
@@ -194,4 +195,4 @@ Write-Host ""
 Write-Host "Then on server:" -ForegroundColor Cyan
 Write-Host "  ssh root@14.103.22.215" -ForegroundColor White
 Write-Host "  cd /opt && tar -xzf $(Split-Path $BundlePkg -Leaf)" -ForegroundColor White
-Write-Host "  cd deploy-bundle-$Version && bash install.sh" -ForegroundColor White
+Write-Host "  cd swapi-deploy-bundle-$Version && bash install.sh" -ForegroundColor White
