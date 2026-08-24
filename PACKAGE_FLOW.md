@@ -61,6 +61,7 @@
 | `scripts/verify-services.sh`      | 服务器 Bash     | 服务健康检查验证                                  |
 | `.env.production.example`         | 模板            | 生产环境变量模板（复制为 `.env.production`）      |
 | `VERSION`                         | 本地            | 版本号文件（构建时注入二进制与前端，见 3.1 注意） |
+| `scripts/versions/`               | 本地            | 版本记录文件（每次构建自动生成 `<版本>.md`，随发布提交，见 3.1） |
 | `bin/migration_*.sql`             | 服务器手动执行  | 跨大版本数据库迁移脚本（见 3.4）                 |
 
 > 部署包（swapi-deploy-bundle）包含镜像 tar + docker-compose.deploy.yml + .env.production.example + install.sh + verify-services.sh，一个包解决所有问题，服务器不需要 git clone，也不需要 Go/Bun 环境。
@@ -148,6 +149,14 @@ git add VERSION && git commit -m "chore: bump VERSION to vX.Y.Z" && git push
 # → 输出: dist\swapi-deploy-bundle-<版本>.tar.gz
 #   内含: swapi 镜像 tar + docker-compose.deploy.yml + .env 模板
 #         + install.sh + verify-services.sh
+
+#     ★ 版本文件（scripts/versions/）：
+#       脚本会自动生成 scripts/versions/<版本>.md（参考 SWX deploy/versions/ 机制）：
+#          - 版本号 / commit / 发布日期 / 上一版本
+#          - 变更描述：优先取环境变量 RELEASE_LOG，否则自动汇总上一版本 tag 到 HEAD 的提交
+#       示例：RELEASE_LOG="修复 xxx 问题" .\scripts\build-swapi-images.ps1
+#       版本文件必须随本次发布一起提交 git：
+#          git add scripts/versions/vX.Y.Z.md && git commit
 
 # 4. 上传到服务器（用实际生成的文件名，不要照抄 vX.Y.Z）
 #    小文件可直接 scp：
@@ -271,6 +280,10 @@ git add VERSION && git commit -m "chore: bump VERSION to v0.2.0" && git push
 # 2. 构建新版本 bundle
 .\scripts\build-swapi-images.ps1 -Version v0.2.0
 
+# 2.1 提交版本文件（构建自动生成于 scripts/versions/v0.2.0.md）
+git add scripts/versions/v0.2.0.md
+git commit -m "chore: release v0.2.0"
+
 # 3. 上传（大文件用分块）
 .\scripts\upload-swapi-chunked.ps1 -Version v0.2.0
 ```
@@ -361,15 +374,16 @@ MINOR  新增功能，向后兼容         v1.0.0 → v1.1.0
 PATCH  Bug 修复，向后兼容         v1.0.0 → v1.0.1
 ```
 
-### 7.2 版本三处一致
+### 7.2 版本四处一致
 
-每次发版，以下三处必须指向同一版本号：
+每次发版，以下四处必须指向同一版本号：
 
 | 位置                | 说明                                            |
 | ------------------- | ----------------------------------------------- |
-| `git tag`           `vX.Y.Z`，push 到远端                            |
-| `VERSION` 文件      构建时注入二进制与前端，空值=版本号丢失          |
-| `DEPLOY_VERSION`    `.env.production` 中，`install.sh` 会自动注入    |
+| `git tag`           | `vX.Y.Z`，push 到远端                            |
+| `VERSION` 文件      | 构建时注入二进制与前端，空值=版本号丢失          |
+| `DEPLOY_VERSION`    | `.env.production` 中，`install.sh` 会自动注入    |
+| `scripts/versions/` | 版本记录文件（构建自动生成 `<版本>.md`，随发布提交） |
 
 ```powershell
 # 创建标签

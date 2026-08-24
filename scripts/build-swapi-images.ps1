@@ -62,6 +62,51 @@ if ($Version -notmatch '^v\d+\.\d+\.\d+([.-].+)?$') {
 }
 Write-Host "[OK] Using version: $Version" -ForegroundColor Green
 
+# ========== 1.5 生成版本文件 ==========
+# 参考 SWX deploy/build-images.ps1：每次发布生成 scripts/versions/<version>.md
+# 内容：版本号、commit、发布日期、上一版本、变更描述
+# 变更描述优先取环境变量 RELEASE_LOG，否则自动汇总上一版本到 HEAD 的提交
+$VersionsDir = Join-Path $ProjectRoot 'scripts\versions'
+if (-not (Test-Path $VersionsDir)) {
+  New-Item -ItemType Directory -Path $VersionsDir -Force | Out-Null
+}
+
+$commitShort = (git -C $ProjectRoot rev-parse --short HEAD 2>$null)
+if (-not $commitShort) { $commitShort = 'unknown' }
+
+$prevTag = (git -C $ProjectRoot tag --sort=-v:refname 2>$null | Where-Object { $_ -ne $Version } | Select-Object -First 1)
+$logLines = @()
+if ($prevTag) {
+  $logLines = git -C $ProjectRoot log --oneline "$prevTag..HEAD" 2>$null
+}
+if ($logLines.Count -eq 0) {
+  $logLines = git -C $ProjectRoot log --oneline -10 2>$null
+}
+
+$desc = $env:RELEASE_LOG
+if ([string]::IsNullOrWhiteSpace($desc)) {
+  $desc = ($logLines | ForEach-Object { "- $_" }) -join "`n"
+}
+if ([string]::IsNullOrWhiteSpace($desc)) { $desc = "发布版本 ${Version}" }
+
+$today = Get-Date -Format 'yyyy-MM-dd'
+$versionFile = Join-Path $VersionsDir "$Version.md"
+$content = @"
+## ${Version} - ${today}
+
+- commit: ${commitShort}
+- 发布日期: ${today}
+- 上一版本: ${prevTag}
+
+### 变更
+
+${desc}
+"@
+# 统一 LF 换行（配合 .gitattributes *.md eol=lf），UTF-8 无 BOM
+[System.IO.File]::WriteAllText($versionFile, $content.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "[OK] 版本文件已生成: $versionFile" -ForegroundColor Green
+Write-Host "     请将版本文件随本次发布一起提交: git add scripts/versions/$Version.md" -ForegroundColor DarkGray
+
 $DistDir = "$ProjectRoot\dist"
 $TarFile = $DistDir + "\swapi-" + $Version + ".tar"
 
