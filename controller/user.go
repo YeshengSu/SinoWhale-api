@@ -142,8 +142,9 @@ func Login(c *gin.Context) {
 
 // issueAgentTokenAndRespond mints (or reuses) the user's "SinoWhale Agent"
 // token inside a transaction, then delegates to setupLogin with the api_key
-// baked into the response extras. Used by both agent Register and Login so
-// the key is always issued in lockstep with the credential handshake.
+// and the agent plan-level indicators baked into the response extras. Used
+// by agent Login so the key + plan status are always issued in lockstep
+// with the credential handshake.
 func issueAgentTokenAndRespond(c *gin.Context, user *model.User) {
 	var tokenID int
 	var apiKey string
@@ -160,10 +161,84 @@ func issueAgentTokenAndRespond(c *gin.Context, user *model.User) {
 		common.ApiError(c, txErr)
 		return
 	}
-	setupLogin(user, c, map[string]any{
-		"api_key":      apiKey,
-		"api_key_id":   tokenID,
-		"api_key_name": model.AgentTokenName,
+	setupLogin(user, c, buildAgentLoginExtras(user.Id, tokenID, apiKey))
+}
+
+// buildAgentLoginExtras assembles the data fields that ride along on the
+// agent login/register response. Currently: api_key metadata + the user's
+// plan_level / has_active_plan snapshot. Failures looking up the active
+// agent subscription are logged but never break auth — a brand-new user
+// legitimately has no plan, so plan_level defaults to "".
+func buildAgentLoginExtras(userID, tokenID int, apiKey string) map[string]any {
+	planLevel, hasActive := loadAgentPlanLevel(userID)
+	return map[string]any{
+		"api_key":         apiKey,
+		"api_key_id":      tokenID,
+		"api_key_name":    model.AgentTokenName,
+		"plan_level":      planLevel,
+		"has_active_plan": hasActive,
+	}
+}
+
+// loadAgentPlanLevel looks up the user's active agent-tagged subscription
+// and returns its plan_level plus a bool indicating whether any active
+// sub was returned. Both are safe to send even when empty.
+func loadAgentPlanLevel(userID int) (string, bool) {
+	sub, err := model.GetUserActiveAgentSubscription(userID)
+	if err != nil {
+		common.SysLog(fmt.Sprintf(
+			"loadAgentPlanLevel: subscription lookup failed for user %d: %s",
+			userID, err.Error(),
+		))
+		return "", false
+	}
+	if sub == nil {
+		return "", false
+	}
+	return sub.PlanLevel, true
+}
+
+// respondAgentRegister writes the canonical agent-mode register response:
+// `{success, message, data: {id, username, display_name, role, status,
+// group, api_key, api_key_id, api_key_name, plan_level, has_active_plan}}`.
+// No session cookie is set and no login audit is recorded — this path is
+// registration only. api_key is included for backend book-keeping (the
+// token row is created/idempotently reused at this point) but the renderer
+// MUST NOT apply it as credentials; the user must complete a separate
+// login handshake.
+func respondAgentRegister(c *gin.Context, user *model.User) {
+	var tokenID int
+	var apiKey string
+	txErr := model.DB.Transaction(func(tx *gorm.DB) error {
+		id, key, err := model.EnsureAgentTokenForUserTx(tx, user.Id)
+		if err != nil {
+			return err
+		}
+		tokenID = id
+		apiKey = key
+		return nil
+	})
+	if txErr != nil {
+		common.ApiError(c, txErr)
+		return
+	}
+	planLevel, hasActive := loadAgentPlanLevel(user.Id)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"id":              user.Id,
+			"username":        user.Username,
+			"display_name":    user.DisplayName,
+			"role":            user.Role,
+			"status":          user.Status,
+			"group":           user.Group,
+			"api_key":         apiKey,
+			"api_key_id":      tokenID,
+			"api_key_name":    model.AgentTokenName,
+			"plan_level":      planLevel,
+			"has_active_plan": hasActive,
+		},
 	})
 }
 
@@ -408,10 +483,11 @@ func Register(c *gin.Context) {
 		}
 	}
 
-	// agent 实例：注册即自动登录（下发会话 Cookie + 用户信息），供 Agent 客户端直接完成凭据交换。
-	// api_key 在 setupLogin 之前由 issueAgentTokenAndRespond 内部事务签发并写入响应。
+	// agent 实例：注册只创建账号 + 预签「SinoWhale Agent」sk-key，
+	// 不再下发会话 Cookie、不再写入登录审计。前端拿到后应切到
+	// 「登录」Tab，由用户完成独立的登录握手后再使用凭据。
 	if common.AgentModeEnabled {
-		issueAgentTokenAndRespond(c, &insertedUser)
+		respondAgentRegister(c, &insertedUser)
 		return
 	}
 

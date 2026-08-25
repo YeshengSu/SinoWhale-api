@@ -62,51 +62,6 @@ if ($Version -notmatch '^v\d+\.\d+\.\d+([.-].+)?$') {
 }
 Write-Host "[OK] Using version: $Version" -ForegroundColor Green
 
-# ========== 1.5 生成版本文件 ==========
-# 参考 SWX deploy/build-images.ps1：每次发布生成 scripts/versions/<version>.md
-# 内容：版本号、commit、发布日期、上一版本、变更描述
-# 变更描述优先取环境变量 RELEASE_LOG，否则自动汇总上一版本到 HEAD 的提交
-$VersionsDir = Join-Path $ProjectRoot 'scripts\versions'
-if (-not (Test-Path $VersionsDir)) {
-  New-Item -ItemType Directory -Path $VersionsDir -Force | Out-Null
-}
-
-$commitShort = (git -C $ProjectRoot rev-parse --short HEAD 2>$null)
-if (-not $commitShort) { $commitShort = 'unknown' }
-
-$prevTag = (git -C $ProjectRoot tag --sort=-v:refname 2>$null | Where-Object { $_ -ne $Version } | Select-Object -First 1)
-$logLines = @()
-if ($prevTag) {
-  $logLines = git -C $ProjectRoot log --oneline "$prevTag..HEAD" 2>$null
-}
-if ($logLines.Count -eq 0) {
-  $logLines = git -C $ProjectRoot log --oneline -10 2>$null
-}
-
-$desc = $env:RELEASE_LOG
-if ([string]::IsNullOrWhiteSpace($desc)) {
-  $desc = ($logLines | ForEach-Object { "- $_" }) -join "`n"
-}
-if ([string]::IsNullOrWhiteSpace($desc)) { $desc = "发布版本 ${Version}" }
-
-$today = Get-Date -Format 'yyyy-MM-dd'
-$versionFile = Join-Path $VersionsDir "$Version.md"
-$content = @"
-## ${Version} - ${today}
-
-- commit: ${commitShort}
-- 发布日期: ${today}
-- 上一版本: ${prevTag}
-
-### 变更
-
-${desc}
-"@
-# 统一 LF 换行（配合 .gitattributes *.md eol=lf），UTF-8 无 BOM
-[System.IO.File]::WriteAllText($versionFile, $content.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "[OK] 版本文件已生成: $versionFile" -ForegroundColor Green
-Write-Host "     请将版本文件随本次发布一起提交: git add scripts/versions/$Version.md" -ForegroundColor DarkGray
-
 $DistDir = "$ProjectRoot\dist"
 $TarFile = $DistDir + "\swapi-" + $Version + ".tar"
 
@@ -156,9 +111,8 @@ Write-Host "  ok  $TarFile" -ForegroundColor Green
 Write-Host ""
 Write-Host "[3/3] Creating deploy bundle..." -ForegroundColor Yellow
 
-# 命名带 swapi- 前缀，避免与同服务器 /opt 下的 SWX deploy-bundle-* 目录冲突
-$BundleDir = $DistDir + "\swapi-deploy-bundle-" + $Version
-$BundlePkg = $DistDir + "\swapi-deploy-bundle-" + $Version + ".tar.gz"
+$BundleDir = $DistDir + "\deploy-bundle-" + $Version
+$BundlePkg = $DistDir + "\deploy-bundle-" + $Version + ".tar.gz"
 
 # clean old bundle
 if (Test-Path $BundleDir) { Remove-Item -Recurse -Force $BundleDir }
@@ -207,15 +161,14 @@ echo "  Admin: https://api.sinxwhalex.com"
 '@
 
 $installScript = $installScript -replace '__VERSION__', $Version
-# bash 脚本必须 LF 行尾：Set-Content 在 Windows 写出 CRLF，会导致服务器 bash 报 invalid option name
-[System.IO.File]::WriteAllText(($BundleDir + "\install.sh"), ($installScript -replace "`r`n", "`n"), [System.Text.Encoding]::ASCII)
+Set-Content -Path ($BundleDir + "\install.sh") -Value $installScript -Encoding ASCII
 
 # ========== 8. package ==========
 Write-Host "  Packaging bundle..." -ForegroundColor Yellow
 
 Push-Location $DistDir
 try {
-  tar -czf $BundlePkg ("swapi-deploy-bundle-" + $Version)
+  tar -czf $BundlePkg ("deploy-bundle-" + $Version)
   Write-Host "  Bundle created: $BundlePkg" -ForegroundColor Green
 } catch {
   Write-Host "  WARN: tar -czf failed, creating zip instead" -ForegroundColor Yellow
@@ -241,4 +194,4 @@ Write-Host ""
 Write-Host "Then on server:" -ForegroundColor Cyan
 Write-Host "  ssh root@14.103.22.215" -ForegroundColor White
 Write-Host "  cd /opt && tar -xzf $(Split-Path $BundlePkg -Leaf)" -ForegroundColor White
-Write-Host "  cd swapi-deploy-bundle-$Version && bash install.sh" -ForegroundColor White
+Write-Host "  cd deploy-bundle-$Version && bash install.sh" -ForegroundColor White

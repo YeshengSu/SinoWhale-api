@@ -52,9 +52,8 @@ echo "[3/4] Database Connectivity:"
 check "postgres-ready" \
   "docker exec swapi-postgres pg_isready -U swapi -d new-api" \
   "accepting"
-REDIS_PASS=$(grep -E '^REDIS_PASSWORD=' "$(dirname "$0")/../.env.production" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)
 check "redis-ping" \
-  "docker exec swapi-redis redis-cli -a '$REDIS_PASS' ping" \
+  "docker exec swapi-redis redis-cli ping" \
   "PONG"
 echo ""
 

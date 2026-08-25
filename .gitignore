@@ -12,6 +12,13 @@ web/default/dist
 web/classic/dist
 web/node_modules
 web/dist
+# Web frontend source — kept as a separate repo/submodule, not part of
+# the Go backend tree.
+web/
+electron/
+# Local Claude / agent scaffolding (not part of the project source).
+.agents/
+.claude/
 /dist/
 .env
 one-api

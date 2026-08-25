@@ -386,6 +386,14 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	// Seed the three base agent token plan tiers (lite / plus / max) so the
+	// wallet UI always has discoverable purchase options, even on a fresh
+	// database with no admin-configured plans. Idempotent — no-op once they
+	// already exist. Other pricing fields stay at schema defaults for admin
+	// to fill in later via the management API.
+	if err := SeedAgentPlans(); err != nil {
+		common.SysLog("failed to seed agent plans: " + err.Error())
+	}
 	common.SysLog("database migrated")
 	return nil
 }
@@ -556,6 +564,14 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "total_amount", DDL: "`total_amount` bigint NOT NULL DEFAULT 0"},
 		{Name: "quota_reset_period", DDL: "`quota_reset_period` varchar(16) DEFAULT 'never'"},
 		{Name: "quota_reset_custom_seconds", DDL: "`quota_reset_custom_seconds` bigint DEFAULT 0"},
+		// Agent plan fields added later — keep these so legacy SQLite databases
+		// upgrade in place when the new columns land.
+		{Name: "tag", DDL: "`tag` varchar(32) DEFAULT ''"},
+		{Name: "plan_level", DDL: "`plan_level` varchar(16) DEFAULT ''"},
+		{Name: "five_hour_limit", DDL: "`five_hour_limit` bigint DEFAULT 0"},
+		{Name: "weekly_limit", DDL: "`weekly_limit` bigint DEFAULT 0"},
+		{Name: "monthly_limit", DDL: "`monthly_limit` bigint DEFAULT 0"},
+		{Name: "allowed_models", DDL: "`allowed_models` text DEFAULT ''"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "updated_at", DDL: "`updated_at` bigint"},
 	}

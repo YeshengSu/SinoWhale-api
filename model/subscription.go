@@ -253,6 +253,76 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	}
 }
 
+// DefaultAgentPlanLevels is the canonical ordering of the three base token
+// plan tiers surfaced to the wallet UI (lite → plus → max).
+var DefaultAgentPlanLevels = []string{"lite", "plus", "max"}
+
+// SeedAgentPlans inserts the three base agent token plans (lite / plus / max)
+// when none with the corresponding `plan_level` + `tag` combination exist.
+// Idempotent: re-running on a populated database is a no-op so the seed can
+// safely run on every startup. Other fields stay at their schema defaults
+// (price 0, currency "USD", no allowed models, etc.) — admin can fill them in
+// later via the management API.
+func SeedAgentPlans() error {
+	for _, level := range DefaultAgentPlanLevels {
+		title := titleForAgentPlanLevel(level)
+		var existing SubscriptionPlan
+		err := DB.Where("plan_level = ? AND tag = ?", level, PlanTagAgent).
+			First(&existing).Error
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		plan := &SubscriptionPlan{
+			Title:     title,
+			PlanLevel: level,
+			Tag:       PlanTagAgent,
+			Enabled:   true,
+			// Descending sort so lite / plus / max render in tier order in the
+			// admin list; sort_order can be edited later per plan.
+			SortOrder: sortOrderForAgentPlanLevel(level),
+		}
+		plan.NormalizeDefaults()
+		if err := DB.Create(plan).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// titleForAgentPlanLevel returns the human-readable title for the canonical
+// tier name. Title is the only user-facing string the admin UI displays
+// before pricing/details are filled in.
+func titleForAgentPlanLevel(level string) string {
+	switch level {
+	case "lite":
+		return "Lite"
+	case "plus":
+		return "Plus"
+	case "max":
+		return "Max"
+	default:
+		return strings.ToUpper(level[:1]) + level[1:]
+	}
+}
+
+// sortOrderForAgentPlanLevel gives lite / plus / max ascending sort_order
+// values so a default Order("sort_order desc") listing shows max first.
+func sortOrderForAgentPlanLevel(level string) int {
+	switch level {
+	case "lite":
+		return 10
+	case "plus":
+		return 20
+	case "max":
+		return 30
+	default:
+		return 0
+	}
+}
+
 // Subscription order (payment -> webhook -> create UserSubscription)
 type SubscriptionOrder struct {
 	Id     int     `json:"id"`
