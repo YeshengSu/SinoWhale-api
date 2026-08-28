@@ -24,6 +24,10 @@ type Pricing struct {
 	QuotaType              int                     `json:"quota_type"`
 	ModelRatio             float64                 `json:"model_ratio"`
 	ModelPrice             float64                 `json:"model_price"`
+	// Credits = QuotaType==1 时的 ModelPrice × CreditsPerUSD；
+	//            QuotaType==0 时的 ModelRatio / QuotaPerUnit × CreditsPerUSD（每 token 多少积分的展示值）。
+	// 展示层只读，不动内部 quota 会计。
+	Credits                float64                 `json:"credits"`
 	OwnerBy                string                  `json:"owner_by"`
 	CompletionRatio        float64                 `json:"completion_ratio"`
 	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
@@ -307,12 +311,19 @@ func updatePricing() {
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
+			pricing.Credits = common.DollarsToCredits(modelPrice)
 			pricing.QuotaType = 1
 		} else {
 			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
 			pricing.ModelRatio = modelRatio
 			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
 			pricing.QuotaType = 0
+			// ratio 模型的"每 token 积分"展示：ModelRatio 是 quota/token；
+			// 1 quota = 1/QuotaPerUnit 美元 = 1/QuotaPerUnit 积分；
+			// credits/token = ModelRatio / QuotaPerUnit × CreditsPerUSD
+			if common.QuotaPerUnit != 0 {
+				pricing.Credits = modelRatio / common.QuotaPerUnit * common.CreditsPerUSD
+			}
 		}
 		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
 			pricing.CacheRatio = &cacheRatio

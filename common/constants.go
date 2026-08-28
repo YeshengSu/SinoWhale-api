@@ -60,6 +60,11 @@ func ThemeAwarePath(suffix string) string {
 // var ChatLink = ""
 // var ChatLink2 = ""
 var QuotaPerUnit = 500 * 1000.0 // $0.002 / 1K tokens
+// CreditsPerUSD 美元→积分的展示层汇率（1 积分 = CreditsPerUSD 美元）。
+// 仅用于 API 输出层与前端展示，**不**影响 quota 内部会计。
+// 当前默认 1.0（1 美元 = 1 积分）；如需换算更人性化（$1=100 积分），
+// 改这里即可，所有 DollarsToCredits 出口同步生效。
+var CreditsPerUSD = 1.0
 // 保留旧变量以兼容历史逻辑，实际展示由 general_setting.quota_display_type 控制
 var DisplayInCurrencyEnabled = true
 var DisplayTokenStatEnabled = true

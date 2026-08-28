@@ -295,12 +295,14 @@ func setupLogin(user *model.User, c *gin.Context, extras ...map[string]any) {
 	}
 	recordLoginAudit(user, c)
 	data := map[string]any{
-		"id":           user.Id,
-		"username":     user.Username,
-		"display_name": user.DisplayName,
-		"role":         user.Role,
-		"status":       user.Status,
-		"group":        user.Group,
+		"id":            user.Id,
+		"username":      user.Username,
+		"display_name":  user.DisplayName,
+		"role":          user.Role,
+		"status":        user.Status,
+		"group":         user.Group,
+		"quota":         user.Quota,
+		"quota_credits": common.QuotaToCredits(user.Quota),
 	}
 	for _, extra := range extras {
 		for k, v := range extra {
@@ -692,7 +694,9 @@ func GetSelf(c *gin.Context) {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
+		"quota_credits":     common.QuotaToCredits(user.Quota),
 		"used_quota":        user.UsedQuota,
+		"used_quota_credits": common.QuotaToCredits(user.UsedQuota),
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
 		"aff_count":         user.AffCount,

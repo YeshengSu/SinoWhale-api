@@ -17,6 +17,9 @@ import (
 
 type SubscriptionPlanDTO struct {
 	Plan model.SubscriptionPlan `json:"plan"`
+	// Credits = plan.PriceAmount × CreditsPerUSD（展示层 1 积分=1 美元恒等）；
+	// 前端按此字段以「积分」显示套餐价，内部 quota 会计不变。
+	Credits float64 `json:"credits"`
 }
 
 type BillingPreferenceRequest struct {
@@ -44,7 +47,8 @@ func GetSubscriptionPlans(c *gin.Context) {
 	for _, p := range plans {
 		p.NormalizeDefaults()
 		result = append(result, SubscriptionPlanDTO{
-			Plan: p,
+			Plan:    p,
+			Credits: common.DollarsToCredits(p.PriceAmount),
 		})
 	}
 	common.ApiSuccess(c, result)
@@ -133,7 +137,8 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 	for _, p := range plans {
 		p.NormalizeDefaults()
 		result = append(result, SubscriptionPlanDTO{
-			Plan: p,
+			Plan:    p,
+			Credits: common.DollarsToCredits(p.PriceAmount),
 		})
 	}
 	common.ApiSuccess(c, result)

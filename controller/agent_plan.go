@@ -35,6 +35,8 @@ type PlanView struct {
 	Subtitle        string             `json:"subtitle"`
 	Currency        string             `json:"currency"`
 	PriceAmount     float64            `json:"price_amount"`
+	// Credits = PriceAmount × CreditsPerUSD（展示层 1 积分=1 美元恒等）。
+	Credits         float64            `json:"credits"`
 	Level           string             `json:"level"`
 	EndTime         int64              `json:"end_time"`
 	MonthlyLimit    int64              `json:"monthly_limit"`
@@ -56,9 +58,15 @@ type UpgradeOption struct {
 	Title         string  `json:"title"`
 	Level         string  `json:"level"`
 	Price         float64 `json:"price"`
+	// Credits = Price × CreditsPerUSD（展示层积分）。
+	Credits       float64 `json:"credits"`
 	Currency      string  `json:"currency"`
 	DiscountMoney float64 `json:"discount_money"`
+	// DiscountCredits = DiscountMoney × CreditsPerUSD（展示层积分）。
+	DiscountCredits float64 `json:"discount_credits"`
 	NetPrice      float64 `json:"net_price"`
+	// NetPriceCredits = NetPrice × CreditsPerUSD（展示层积分）。
+	NetPriceCredits float64 `json:"net_price_credits"`
 }
 
 // AgentPlanResponse is the shape consumed by the Agent wallet page.
@@ -82,13 +90,11 @@ type UsageSummary struct {
 
 // GetUserAgentPlan returns the current active agent subscription, the three
 // window usage summaries, and the list of higher-level plans available for
-// upgrade. Only available when AGENT_MODE is enabled — otherwise returns a
-// localized "agent mode not enabled" error.
+// upgrade. Reads from `user_subscriptions` (tag=agent) regardless of the
+// global AGENT_MODE flag so password-mode users with a bound plan can still
+// query it; AGENT_MODE only gates the agent-only login/register handshake
+// upstream of this endpoint.
 func GetUserAgentPlan(c *gin.Context) {
-	if !common.AgentModeEnabled {
-		common.ApiErrorI18n(c, i18n.MsgUserAgentModeRequired)
-		return
-	}
 	userId := c.GetInt("id")
 	if userId <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -141,13 +147,16 @@ func GetUserAgentPlan(c *gin.Context) {
 			net = 0
 		}
 		resp.AvailableUpgrades = append(resp.AvailableUpgrades, UpgradeOption{
-			Id:            p.Id,
-			Title:         p.Title,
-			Level:         p.PlanLevel,
-			Price:         p.PriceAmount,
-			Currency:      p.Currency,
-			DiscountMoney: discount,
-			NetPrice:      net,
+			Id:              p.Id,
+			Title:           p.Title,
+			Level:           p.PlanLevel,
+			Price:           p.PriceAmount,
+			Credits:         common.DollarsToCredits(p.PriceAmount),
+			Currency:        p.Currency,
+			DiscountMoney:   discount,
+			DiscountCredits: common.DollarsToCredits(discount),
+			NetPrice:        net,
+			NetPriceCredits: common.DollarsToCredits(net),
 		})
 	}
 
@@ -161,6 +170,7 @@ func buildPlanView(plan *model.SubscriptionPlan, sub *model.UserSubscription, fi
 		Subtitle:        plan.Subtitle,
 		Currency:        plan.Currency,
 		PriceAmount:     plan.PriceAmount,
+		Credits:         common.DollarsToCredits(plan.PriceAmount),
 		Level:           plan.PlanLevel,
 		EndTime:         sub.EndTime,
 		MonthlyLimit:    sub.MonthlyLimitSnap,
