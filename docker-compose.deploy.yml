@@ -22,6 +22,12 @@ services:
       - SWX_HEADER_ENABLED=${SWX_HEADER_ENABLED:-true}
       - SWX_HEADER_STRICT=${SWX_HEADER_STRICT:-false}
       - SWX_HEADER_LOG_QUERY_ROLE=${SWX_HEADER_LOG_QUERY_ROLE:-admin}
+      - AGENT_MODE=${AGENT_MODE:-false}
+      - SMS_PROVIDER=${SMS_PROVIDER:-aliyun}
+      - SMS_ACCESS_KEY=${SMS_ACCESS_KEY:-}
+      - SMS_SECRET_KEY=${SMS_SECRET_KEY:-}
+      - SMS_SIGN_NAME=${SMS_SIGN_NAME:-}
+      - SMS_TEMPLATE_CODE=${SMS_TEMPLATE_CODE:-}
     depends_on:
       swapi-redis:
         condition: service_healthy

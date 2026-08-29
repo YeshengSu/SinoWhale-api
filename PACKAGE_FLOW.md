@@ -203,6 +203,21 @@ SWX_HEADER_LOG_QUERY_ROLE=admin
 
 > SWAPI 不需要 SWX 那样的 `setup-passwords.sh` 交互向导——密钥字段只有 3 个，直接编辑即可。
 
+**可选字段**（Agent 模式，v0.1.1 起支持）：
+
+```ini
+# Agent 专用实例：登录/注册强制「手机号 + 短信验证码 + 密码」，
+# Token 强制 agent 标签，网页隐藏登录/注册页。启用前必须确保短信可用
+AGENT_MODE=false
+SMS_PROVIDER=aliyun
+SMS_ACCESS_KEY=
+SMS_SECRET_KEY=
+SMS_SIGN_NAME=
+SMS_TEMPLATE_CODE=
+```
+
+> 修改任一字段后需 `docker compose up -d` 重建容器生效；遵循第十二章五处同步检查清单。
+
 ```bash
 # 3. 一键安装（加载镜像 → 启动所有容器 → 健康检查）
 bash install.sh
