@@ -125,10 +125,7 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 func AdminListSubscriptionPlans(c *gin.Context) {
 	var plans []model.SubscriptionPlan
 	queryBuilder := model.DB
-	if common.AgentModeEnabled {
-		// Agent 实例管理员页只看到 agent 档位套餐
-		queryBuilder = queryBuilder.Where("tag = ?", model.PlanTagAgent)
-	}
+	// 通用模式：所有 tag 套餐统一展示，不做 agent 过滤（PRD 7.1）
 	if err := queryBuilder.Order("sort_order desc, id desc").Find(&plans).Error; err != nil {
 		common.ApiError(c, err)
 		return

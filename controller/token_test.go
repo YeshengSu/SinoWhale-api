@@ -538,3 +538,125 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 		t.Fatalf("unauthorized key response leaked raw token key: %s", unauthorizedRecorder.Body.String())
 	}
 }
+
+func TestAddTokenPersistsAgentTag(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+
+	body := map[string]any{
+		"name":            "agent-tagged",
+		"tag":             "agent",
+		"expired_time":    -1,
+		"remain_quota":    100,
+		"unlimited_quota": true,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 1)
+	AddToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected AddToken with tag=agent to succeed, got message: %s", response.Message)
+	}
+	var stored model.Token
+	if err := db.First(&stored, "name = ?", "agent-tagged").Error; err != nil {
+		t.Fatalf("failed to load stored token: %v", err)
+	}
+	if stored.Tag != "agent" {
+		t.Fatalf("expected persisted tag %q, got %q", "agent", stored.Tag)
+	}
+}
+
+func TestAddTokenDefaultsEmptyTag(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+
+	body := map[string]any{
+		"name":            "no-tag",
+		"expired_time":    -1,
+		"remain_quota":    100,
+		"unlimited_quota": true,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 1)
+	AddToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected AddToken without tag to succeed, got message: %s", response.Message)
+	}
+	var stored model.Token
+	if err := db.First(&stored, "name = ?", "no-tag").Error; err != nil {
+		t.Fatalf("failed to load stored token: %v", err)
+	}
+	if stored.Tag != "" {
+		t.Fatalf("expected default empty tag, got %q", stored.Tag)
+	}
+}
+
+func TestAddTokenRejectsInvalidTag(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+
+	body := map[string]any{
+		"name":            "bad-tag",
+		"tag":             "not-in-whitelist",
+		"expired_time":    -1,
+		"remain_quota":    100,
+		"unlimited_quota": true,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 1)
+	AddToken(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400 for invalid tag, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var count int64
+	if err := db.Model(&model.Token{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count tokens: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no token persisted for invalid tag, got %d", count)
+	}
+}
+
+func TestUpdateTokenTagRules(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 1, "retag-token", "retag1234token5678")
+
+	updateBody := func(tag any) map[string]any {
+		return map[string]any{
+			"id":                   token.Id,
+			"name":                 "retag-token",
+			"tag":                  tag,
+			"expired_time":         -1,
+			"remain_quota":         100,
+			"unlimited_quota":      true,
+			"model_limits_enabled": false,
+			"model_limits":         "",
+			"group":                "default",
+			"cross_group_retry":    false,
+		}
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", updateBody("agent"), 1)
+	UpdateToken(ctx)
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected update with tag=agent to succeed, got message: %s", response.Message)
+	}
+	var stored model.Token
+	if err := db.First(&stored, "id = ?", token.Id).Error; err != nil {
+		t.Fatalf("failed to reload token: %v", err)
+	}
+	if stored.Tag != "agent" {
+		t.Fatalf("expected updated tag %q, got %q", "agent", stored.Tag)
+	}
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPut, "/api/token/", updateBody("evil"), 1)
+	UpdateToken(ctx)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400 for invalid tag, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if err := db.First(&stored, "id = ?", token.Id).Error; err != nil {
+		t.Fatalf("failed to reload token: %v", err)
+	}
+	if stored.Tag != "agent" {
+		t.Fatalf("expected tag to remain %q after rejected update, got %q", "agent", stored.Tag)
+	}
+}

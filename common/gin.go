@@ -228,6 +228,20 @@ func ApiErrorI18n(c *gin.Context, key string, args ...map[string]any) {
 	})
 }
 
+// ApiErrorI18nCode returns a translated error message with a machine-readable
+// error code appended to the response body:
+// `{ "success": false, "message": "...", "code": "..." }`.
+// The code is a stable identifier for frontend branching; the message remains
+// the human-readable translated text.
+func ApiErrorI18nCode(c *gin.Context, key string, code string) {
+	msg := TranslateMessage(c, key)
+	c.JSON(http.StatusOK, gin.H{
+		"success": false,
+		"message": msg,
+		"code":    code,
+	})
+}
+
 // ApiSuccessI18n returns a translated success message based on the user's language preference
 func ApiSuccessI18n(c *gin.Context, key string, data any, args ...map[string]any) {
 	msg := TranslateMessage(c, key, args...)

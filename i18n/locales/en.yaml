@@ -79,7 +79,7 @@ user.phone_verification_required: "Phone verification is required to register, p
 user.phone_invalid: "Invalid phone number, please enter a valid mainland China mobile number"
 user.phone_already_taken: "Phone number is already in use"
 user.phone_not_found: "No phone number is bound to this account"
-user.login_sms_required: "This is an agent-dedicated instance, please log in with phone number and SMS verification code"
+user.account_temporarily_locked: "Account temporarily locked after too many failed login attempts. Please try again later or log in via SMS verification code"
 user.sms_not_configured: "Aliyun SMS service is not configured yet, please contact the administrator"
 user.sms_send_failed: "Failed to send SMS verification code"
 user.agent_mode_required: "This endpoint is only available on agent instances"

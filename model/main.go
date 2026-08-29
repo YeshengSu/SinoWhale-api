@@ -50,6 +50,11 @@ func initCol() {
 	}
 }
 
+// InitColumnNames initializes the dialect-specific column-name helpers.
+// Exported for test harnesses that wire model.DB directly (bypassing InitDB),
+// e.g. the service package TestMain with an in-memory SQLite database.
+func InitColumnNames() { initCol() }
+
 var DB *gorm.DB
 
 var LOG_DB *gorm.DB

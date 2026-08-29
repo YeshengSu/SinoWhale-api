@@ -55,8 +55,8 @@ func GetStatus(c *gin.Context) {
 		"version":                     common.Version,
 		"start_time":                  common.StartTime,
 		"email_verification":          common.EmailVerificationEnabled,
-		"phone_verification":          common.AgentModeEnabled, // 仅 agent 实例强制手机验证注册
-		"agent_mode":                  common.AgentModeEnabled, // agent 实例：网页隐藏登录/注册页
+		"phone_verification":          false, // 通用模式：注册不强制手机验证（保留字段供旧前端读取）
+		"agent_mode":                  false, // 已退役的实例开关，恒为 false；前端不再隐藏登录/注册页
 		"github_oauth":                common.GitHubOAuthEnabled,
 		"github_client_id":            common.GitHubClientId,
 		"discord_oauth":               system_setting.GetDiscordSettings().Enabled,

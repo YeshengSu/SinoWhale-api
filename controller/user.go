@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -30,7 +31,7 @@ import (
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	// agent 实例（AGENT_MODE）登录使用：手机号 + 短信验证码 + 密码
+	// 手机号登录使用：Phone + SmsCode（验证码方式）/ Phone + Password（密码方式）
 	Phone   string `json:"phone"`
 	SmsCode string `json:"sms_code"`
 }
@@ -42,75 +43,169 @@ var (
 
 func Login(c *gin.Context) {
 	if !common.PasswordLoginEnabled {
-		common.ApiErrorI18n(c, i18n.MsgUserPasswordLoginDisabled)
+		common.ApiErrorI18nCode(c, i18n.MsgUserPasswordLoginDisabled, "password_login_disabled")
 		return
 	}
 	var loginRequest LoginRequest
 	err := json.NewDecoder(c.Request.Body).Decode(&loginRequest)
 	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		common.ApiErrorI18nCode(c, i18n.MsgInvalidParams, "invalid_params")
 		return
 	}
-	password := loginRequest.Password
+	// 统一登录三方式判定（PRD 4.1）：手机号+验证码+密码 > 手机号+密码 > 用户名+密码
+	phone := model.NormalizePhone(loginRequest.Phone)
+	switch {
+	case phone != "" && loginRequest.SmsCode != "":
+		loginByPhoneSms(c, phone, loginRequest.SmsCode, loginRequest.Password)
+	case phone != "":
+		loginByPhonePassword(c, phone, loginRequest.Password)
+	case loginRequest.SmsCode != "":
+		// sms_code 非空但 phone 为空：不按 username 字段猜测手机号
+		common.ApiErrorI18nCode(c, i18n.MsgInvalidParams, "invalid_params")
+	case loginRequest.Username != "" && loginRequest.Password != "":
+		loginByUsernamePassword(c, loginRequest.Username, loginRequest.Password)
+	default:
+		common.ApiErrorI18nCode(c, i18n.MsgInvalidParams, "invalid_params")
+	}
+}
 
-	// agent 实例：强制「手机号 + 短信验证码 + 密码」登录
-	if common.AgentModeEnabled {
-		phone := model.NormalizePhone(loginRequest.Phone)
-		if phone == "" {
-			phone = model.NormalizePhone(loginRequest.Username) // 兼容把手机号填在 username 字段
-		}
-		if phone == "" || loginRequest.SmsCode == "" || password == "" {
-			common.ApiErrorI18n(c, i18n.MsgUserLoginSmsRequired)
-			return
-		}
-		if !model.IsValidCNPhone(phone) {
-			common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
-			return
-		}
-		if !common.VerifyCodeWithKey(phone, loginRequest.SmsCode, common.SmsLoginPurpose) {
-			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
-			return
-		}
-		user, err := model.GetUserByPhoneForAuth(phone)
-		if err != nil {
-			if errors.Is(err, model.ErrPhoneNotFound) {
-				common.ApiErrorI18n(c, i18n.MsgUserPhoneNotFound)
-				return
-			}
-			common.ApiError(c, err)
-			return
-		}
-		if !common.ValidatePasswordAndHash(password, user.Password) || user.Status != common.UserStatusEnabled {
-			common.ApiErrorI18n(c, i18n.MsgUserUsernameOrPasswordError)
-			return
-		}
-		common.DeleteKey(phone, common.SmsLoginPurpose)
-		// agent 实例：登录与 api_key 签发强绑定 — 登录成功的同一响应里
-		// 下发「SinoWhale Agent」专属 sk- key，agent 客户端不允许再走单独的
-		// token 签发路径。
-		issueAgentTokenAndRespond(c, user)
-		return
-	}
+// per-phone 登录失败锁定（PRD 4.5 第二层）：密码方式连续失败计数递增 +
+// 15 分钟 TTL，达到上限后拒绝该手机号的密码登录并返回
+// account_temporarily_locked；成功登录清零。仅作用于密码方式——锁定期内
+// 验证码与用户名方式不受影响。
+const phoneLoginFailKeyPrefix = "login_fail:phone:"
 
-	username := loginRequest.Username
-	if username == "" || password == "" {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+var (
+	phoneLoginFailLimit = 5
+	phoneLoginFailTTL   = 15 * time.Minute
+)
+
+type phoneLoginFailRecord struct {
+	count     int
+	expiresAt time.Time
+}
+
+type phoneLoginLimiterType struct {
+	mutex   sync.Mutex
+	records map[string]phoneLoginFailRecord
+}
+
+func newPhoneLoginLimiter() *phoneLoginLimiterType {
+	return &phoneLoginLimiterType{records: make(map[string]phoneLoginFailRecord)}
+}
+
+var phoneLoginLimiter = newPhoneLoginLimiter()
+
+func (l *phoneLoginLimiterType) isLocked(phone string) bool {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	rec, ok := l.records[phoneLoginFailKeyPrefix+phone]
+	if !ok || time.Now().After(rec.expiresAt) {
+		return false
+	}
+	return rec.count >= phoneLoginFailLimit
+}
+
+func (l *phoneLoginLimiterType) recordFail(phone string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	now := time.Now()
+	key := phoneLoginFailKeyPrefix + phone
+	rec, ok := l.records[key]
+	if !ok || now.After(rec.expiresAt) {
+		rec = phoneLoginFailRecord{}
+	}
+	rec.count++
+	rec.expiresAt = now.Add(phoneLoginFailTTL)
+	l.records[key] = rec
+	// 顺手清理过期条目，避免 map 无限增长
+	for k, r := range l.records {
+		if now.After(r.expiresAt) {
+			delete(l.records, k)
+		}
+	}
+}
+
+func (l *phoneLoginLimiterType) clear(phone string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	delete(l.records, phoneLoginFailKeyPrefix+phone)
+}
+
+// loginByPhoneSms 手机号 + 短信验证码 + 密码登录。保留 phone_not_found
+// 提示（发码阶段已隐式确认号码存在，无新增枚举面，PRD 4.2）。
+func loginByPhoneSms(c *gin.Context, phone, smsCode, password string) {
+	if !model.IsValidCNPhone(phone) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserPhoneInvalid, "phone_invalid")
 		return
 	}
+	if !common.VerifyCodeWithKey(phone, smsCode, common.SmsLoginPurpose) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserVerificationCodeError, "verification_code_error")
+		return
+	}
+	user, err := model.GetUserByPhoneForAuth(phone)
+	if err != nil {
+		if errors.Is(err, model.ErrPhoneNotFound) {
+			common.ApiErrorI18nCode(c, i18n.MsgUserPhoneNotFound, "phone_not_found")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	if !common.ValidatePasswordAndHash(password, user.Password) || user.Status != common.UserStatusEnabled {
+		common.ApiErrorI18nCode(c, i18n.MsgUserUsernameOrPasswordError, "invalid_credentials")
+		return
+	}
+	common.DeleteKey(phone, common.SmsLoginPurpose)
+	setupLogin(user, c)
+}
+
+// loginByPhonePassword 手机号 + 密码登录。失败统一返回 invalid_credentials
+// （不区分「号码未注册」与「密码错误」，防枚举），并累计 per-phone 失败计数。
+func loginByPhonePassword(c *gin.Context, phone, password string) {
+	if !model.IsValidCNPhone(phone) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserPhoneInvalid, "phone_invalid")
+		return
+	}
+	if phoneLoginLimiter.isLocked(phone) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserAccountTemporarilyLocked, "account_temporarily_locked")
+		return
+	}
+	user, err := model.GetUserByPhoneForAuth(phone)
+	if err != nil {
+		if errors.Is(err, model.ErrPhoneNotFound) {
+			phoneLoginLimiter.recordFail(phone)
+			common.ApiErrorI18nCode(c, i18n.MsgUserUsernameOrPasswordError, "invalid_credentials")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	if !common.ValidatePasswordAndHash(password, user.Password) || user.Status != common.UserStatusEnabled {
+		phoneLoginLimiter.recordFail(phone)
+		common.ApiErrorI18nCode(c, i18n.MsgUserUsernameOrPasswordError, "invalid_credentials")
+		return
+	}
+	phoneLoginLimiter.clear(phone)
+	setupLogin(user, c)
+}
+
+// loginByUsernamePassword 用户名 + 密码登录，保持原有行为（含 2FA 分支）。
+func loginByUsernamePassword(c *gin.Context, username, password string) {
 	user := model.User{
 		Username: username,
 		Password: password,
 	}
-	err = user.ValidateAndFill()
+	err := user.ValidateAndFill()
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrDatabase):
 			common.SysLog(fmt.Sprintf("Login database error for user %s: %v", username, err))
 			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		case errors.Is(err, model.ErrUserEmptyCredentials):
-			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			common.ApiErrorI18nCode(c, i18n.MsgInvalidParams, "invalid_params")
 		default:
-			common.ApiErrorI18n(c, i18n.MsgUserUsernameOrPasswordError)
+			common.ApiErrorI18nCode(c, i18n.MsgUserUsernameOrPasswordError, "invalid_credentials")
 		}
 		return
 	}
@@ -138,108 +233,6 @@ func Login(c *gin.Context) {
 	}
 
 	setupLogin(&user, c)
-}
-
-// issueAgentTokenAndRespond mints (or reuses) the user's "SinoWhale Agent"
-// token inside a transaction, then delegates to setupLogin with the api_key
-// and the agent plan-level indicators baked into the response extras. Used
-// by agent Login so the key + plan status are always issued in lockstep
-// with the credential handshake.
-func issueAgentTokenAndRespond(c *gin.Context, user *model.User) {
-	var tokenID int
-	var apiKey string
-	txErr := model.DB.Transaction(func(tx *gorm.DB) error {
-		id, key, err := model.EnsureAgentTokenForUserTx(tx, user.Id)
-		if err != nil {
-			return err
-		}
-		tokenID = id
-		apiKey = key
-		return nil
-	})
-	if txErr != nil {
-		common.ApiError(c, txErr)
-		return
-	}
-	setupLogin(user, c, buildAgentLoginExtras(user.Id, tokenID, apiKey))
-}
-
-// buildAgentLoginExtras assembles the data fields that ride along on the
-// agent login/register response. Currently: api_key metadata + the user's
-// plan_level / has_active_plan snapshot. Failures looking up the active
-// agent subscription are logged but never break auth — a brand-new user
-// legitimately has no plan, so plan_level defaults to "".
-func buildAgentLoginExtras(userID, tokenID int, apiKey string) map[string]any {
-	planLevel, hasActive := loadAgentPlanLevel(userID)
-	return map[string]any{
-		"api_key":         apiKey,
-		"api_key_id":      tokenID,
-		"api_key_name":    model.AgentTokenName,
-		"plan_level":      planLevel,
-		"has_active_plan": hasActive,
-	}
-}
-
-// loadAgentPlanLevel looks up the user's active agent-tagged subscription
-// and returns its plan_level plus a bool indicating whether any active
-// sub was returned. Both are safe to send even when empty.
-func loadAgentPlanLevel(userID int) (string, bool) {
-	sub, err := model.GetUserActiveAgentSubscription(userID)
-	if err != nil {
-		common.SysLog(fmt.Sprintf(
-			"loadAgentPlanLevel: subscription lookup failed for user %d: %s",
-			userID, err.Error(),
-		))
-		return "", false
-	}
-	if sub == nil {
-		return "", false
-	}
-	return sub.PlanLevel, true
-}
-
-// respondAgentRegister writes the canonical agent-mode register response:
-// `{success, message, data: {id, username, display_name, role, status,
-// group, api_key, api_key_id, api_key_name, plan_level, has_active_plan}}`.
-// No session cookie is set and no login audit is recorded — this path is
-// registration only. api_key is included for backend book-keeping (the
-// token row is created/idempotently reused at this point) but the renderer
-// MUST NOT apply it as credentials; the user must complete a separate
-// login handshake.
-func respondAgentRegister(c *gin.Context, user *model.User) {
-	var tokenID int
-	var apiKey string
-	txErr := model.DB.Transaction(func(tx *gorm.DB) error {
-		id, key, err := model.EnsureAgentTokenForUserTx(tx, user.Id)
-		if err != nil {
-			return err
-		}
-		tokenID = id
-		apiKey = key
-		return nil
-	})
-	if txErr != nil {
-		common.ApiError(c, txErr)
-		return
-	}
-	planLevel, hasActive := loadAgentPlanLevel(user.Id)
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data": gin.H{
-			"id":              user.Id,
-			"username":        user.Username,
-			"display_name":    user.DisplayName,
-			"role":            user.Role,
-			"status":          user.Status,
-			"group":           user.Group,
-			"api_key":         apiKey,
-			"api_key_id":      tokenID,
-			"api_key_name":    model.AgentTokenName,
-			"plan_level":      planLevel,
-			"has_active_plan": hasActive,
-		},
-	})
 }
 
 // loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。
@@ -359,29 +352,6 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
-	// agent 实例：注册强制手机号 + 短信验证码；普通实例恢复用户名+密码注册
-	if common.AgentModeEnabled {
-		if user.Phone == "" || user.SmsCode == "" {
-			common.ApiErrorI18n(c, i18n.MsgUserPhoneVerificationRequired)
-			return
-		}
-		if !model.IsValidCNPhone(user.Phone) {
-			common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
-			return
-		}
-		if !common.VerifyCodeWithKey(user.Phone, user.SmsCode, common.SmsVerificationPurpose) {
-			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
-			return
-		}
-		if err := model.EnsurePhoneAvailable(user.Phone, 0); err != nil {
-			if errors.Is(err, model.ErrPhoneAlreadyTaken) {
-				common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyTaken)
-				return
-			}
-			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
-			return
-		}
-	}
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
@@ -426,9 +396,6 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if common.AgentModeEnabled {
-		cleanUser.Phone = user.Phone
-	}
 	if err := cleanUser.Insert(inviterId); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
@@ -442,7 +409,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// 注册获取插入后的用户ID，agent 实例的 api_key 在登录态初始化阶段统一签发。
+	// 注册获取插入后的用户ID，用于生成默认令牌。
 	var insertedUser model.User
 	txErr := model.DB.Transaction(func(tx *gorm.DB) error {
 		return tx.Where("username = ?", cleanUser.Username).First(&insertedUser).Error
@@ -450,10 +417,6 @@ func Register(c *gin.Context) {
 	if txErr != nil {
 		common.ApiError(c, txErr)
 		return
-	}
-	// agent 模式注册成功后销毁短信验证码，防止复用
-	if common.AgentModeEnabled {
-		common.DeleteKey(user.Phone, common.SmsVerificationPurpose)
 	}
 
 	// 生成默认令牌
@@ -483,14 +446,6 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
 			return
 		}
-	}
-
-	// agent 实例：注册只创建账号 + 预签「SinoWhale Agent」sk-key，
-	// 不再下发会话 Cookie、不再写入登录审计。前端拿到后应切到
-	// 「登录」Tab，由用户完成独立的登录握手后再使用凭据。
-	if common.AgentModeEnabled {
-		respondAgentRegister(c, &insertedUser)
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -680,34 +635,34 @@ func GetSelf(c *gin.Context) {
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
-		"id":                user.Id,
-		"username":          user.Username,
-		"display_name":      user.DisplayName,
-		"role":              user.Role,
-		"status":            user.Status,
-		"email":             user.Email,
-		"phone":             user.Phone,
-		"github_id":         user.GitHubId,
-		"discord_id":        user.DiscordId,
-		"oidc_id":           user.OidcId,
-		"wechat_id":         user.WeChatId,
-		"telegram_id":       user.TelegramId,
-		"group":             user.Group,
-		"quota":             user.Quota,
-		"quota_credits":     common.QuotaToCredits(user.Quota),
-		"used_quota":        user.UsedQuota,
+		"id":                 user.Id,
+		"username":           user.Username,
+		"display_name":       user.DisplayName,
+		"role":               user.Role,
+		"status":             user.Status,
+		"email":              user.Email,
+		"phone":              user.Phone,
+		"github_id":          user.GitHubId,
+		"discord_id":         user.DiscordId,
+		"oidc_id":            user.OidcId,
+		"wechat_id":          user.WeChatId,
+		"telegram_id":        user.TelegramId,
+		"group":              user.Group,
+		"quota":              user.Quota,
+		"quota_credits":      common.QuotaToCredits(user.Quota),
+		"used_quota":         user.UsedQuota,
 		"used_quota_credits": common.QuotaToCredits(user.UsedQuota),
-		"request_count":     user.RequestCount,
-		"aff_code":          user.AffCode,
-		"aff_count":         user.AffCount,
-		"aff_quota":         user.AffQuota,
-		"aff_history_quota": user.AffHistoryQuota,
-		"inviter_id":        user.InviterId,
-		"linux_do_id":       user.LinuxDOId,
-		"setting":           user.Setting,
-		"stripe_customer":   user.StripeCustomer,
-		"sidebar_modules":   userSetting.SidebarModules, // 正确提取sidebar_modules字段
-		"permissions":       permissions,                // 新增权限字段
+		"request_count":      user.RequestCount,
+		"aff_code":           user.AffCode,
+		"aff_count":          user.AffCount,
+		"aff_quota":          user.AffQuota,
+		"aff_history_quota":  user.AffHistoryQuota,
+		"inviter_id":         user.InviterId,
+		"linux_do_id":        user.LinuxDOId,
+		"setting":            user.Setting,
+		"stripe_customer":    user.StripeCustomer,
+		"sidebar_modules":    userSetting.SidebarModules, // 正确提取sidebar_modules字段
+		"permissions":        permissions,                // 新增权限字段
 	}
 
 	c.JSON(http.StatusOK, gin.H{

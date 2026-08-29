@@ -1596,6 +1596,8 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			// Agent plan：把预扣同步累加到 5h/周/月三窗口计数器。
 			// 非 agent sub 不写入三窗口（与既有 AmountUsed 行为完全兼容）。
 			if sub.Tag == PlanTagAgent {
+				// 事务内必须用 tx 版本取时间，避免嵌套取连接死锁（见 GetDBTimestamp 注释）。
+				now := GetDBTimestampOn(tx)
 				for _, pt := range []string{UserPlanUsagePeriodFiveHour, UserPlanUsagePeriodWeekly, UserPlanUsagePeriodMonthly} {
 					start, end, perr := ComputeCurrentPeriod(pt, sub.StartTime, now, time.Local)
 					if perr != nil {
@@ -1639,7 +1641,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -1738,42 +1740,49 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := lockForUpdate(tx).
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
-			return err
-		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
-		}
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		sub.AmountUsed = newUsed
-		if err := tx.Save(&sub).Error; err != nil {
-			return err
-		}
-		// Agent plan：把 delta 同步到 5h/周/月三窗口。Refund/Settle 都会走这里。
-		// 注意我们直接用 now 计算窗口；如果 delta 来自跨桶的 refund（例如 5h
-		// 桶已过期但 PreConsumeRecord 仍记录旧窗口），按当前窗口调整可能错位——
-		// 这是已知的折中：3 窗口是展示用，不参与强扣费拦截，跨桶差异会在周期
-		// 清理中自然消失。
-		if sub.Tag == PlanTagAgent {
-			now := GetDBTimestamp()
-			for _, pt := range []string{UserPlanUsagePeriodFiveHour, UserPlanUsagePeriodWeekly, UserPlanUsagePeriodMonthly} {
-				start, end, perr := ComputeCurrentPeriod(pt, sub.StartTime, now, time.Local)
-				if perr != nil {
-					continue
-				}
-				if uerr := UpsertUserPlanUsage(tx, sub.Id, sub.UserId, pt, start, end, delta); uerr != nil {
-					return uerr
-				}
+		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
+	})
+}
+
+// postConsumeUserSubscriptionDeltaTx 是 PostConsumeUserSubscriptionDelta 的
+// 事务内版本，供已持有事务的调用方（如 RefundSubscriptionPreConsume）复用，
+// 避免嵌套 DB.Transaction 在单连接数据库（sqlite）上死锁。
+func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {
+	var sub UserSubscription
+	if err := lockForUpdate(tx).
+		Where("id = ?", userSubscriptionId).
+		First(&sub).Error; err != nil {
+		return err
+	}
+	newUsed := sub.AmountUsed + delta
+	if newUsed < 0 {
+		newUsed = 0
+	}
+	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+	}
+	sub.AmountUsed = newUsed
+	if err := tx.Save(&sub).Error; err != nil {
+		return err
+	}
+	// Agent plan：把 delta 同步到 5h/周/月三窗口。Refund/Settle 都会走这里。
+	// 注意我们直接用 now 计算窗口；如果 delta 来自跨桶的 refund（例如 5h
+	// 桶已过期但 PreConsumeRecord 仍记录旧窗口），按当前窗口调整可能错位——
+	// 这是已知的折中：3 窗口是展示用，不参与强扣费拦截，跨桶差异会在周期
+	// 清理中自然消失。
+	if sub.Tag == PlanTagAgent {
+		now := GetDBTimestampOn(tx) // 事务内必须走 tx，避免全局连接池自死锁
+		for _, pt := range []string{UserPlanUsagePeriodFiveHour, UserPlanUsagePeriodWeekly, UserPlanUsagePeriodMonthly} {
+			start, end, perr := ComputeCurrentPeriod(pt, sub.StartTime, now, time.Local)
+			if perr != nil {
+				continue
+			}
+			if uerr := UpsertUserPlanUsage(tx, sub.Id, sub.UserId, pt, start, end, delta); uerr != nil {
+				return uerr
 			}
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // -----------------------------------------------------------------------------

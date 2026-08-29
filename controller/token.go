@@ -7,12 +7,32 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
+
+// normalizeTokenTag 归一化请求中的 token tag：去除首尾空白。
+// 结果不在 constant.TokenTagWhitelist 内时返回错误（调用方应回 400）。
+func normalizeTokenTag(tag string) (string, error) {
+	tag = strings.TrimSpace(tag)
+	if !constant.IsTokenTagValid(tag) {
+		return "", fmt.Errorf("invalid token tag: %q", tag)
+	}
+	return tag, nil
+}
+
+// respondInvalidTokenTag 返回非法 tag 的 400 响应。
+func respondInvalidTokenTag(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"success": false,
+		"code":    i18n.MsgInvalidParams,
+		"message": common.TranslateMessage(c, i18n.MsgInvalidParams),
+	})
+}
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	if token == nil {
@@ -175,6 +195,11 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	tag, tagErr := normalizeTokenTag(token.Tag)
+	if tagErr != nil {
+		respondInvalidTokenTag(c)
+		return
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -222,12 +247,8 @@ func AddToken(c *gin.Context) {
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
 	}
-	// agent 实例：token 强制 agent 标签，杜绝非 agent 标签
-	if common.AgentModeEnabled {
-		cleanToken.Tag = "agent"
-	} else {
-		cleanToken.Tag = token.Tag
-	}
+	// tag 经白名单校验归一化；空串表示未打标签（缺省）
+	cleanToken.Tag = tag
 	err = cleanToken.Insert()
 	if err != nil {
 		common.ApiError(c, err)
@@ -295,6 +316,11 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		tag, tagErr := normalizeTokenTag(token.Tag)
+		if tagErr != nil {
+			respondInvalidTokenTag(c)
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
@@ -305,12 +331,8 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		// agent 实例：token 标签强制 agent，杜绝非 agent 标签
-		if common.AgentModeEnabled {
-			cleanToken.Tag = "agent"
-		} else {
-			cleanToken.Tag = token.Tag
-		}
+		// tag 经白名单校验归一化；空串表示未打标签（缺省）
+		cleanToken.Tag = tag
 	}
 	err = cleanToken.Update()
 	if err != nil {

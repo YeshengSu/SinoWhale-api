@@ -91,7 +91,7 @@ const (
 	MsgUserPhoneInvalid              = "user.phone_invalid"
 	MsgUserPhoneAlreadyTaken         = "user.phone_already_taken"
 	MsgUserPhoneNotFound             = "user.phone_not_found"
-	MsgUserLoginSmsRequired          = "user.login_sms_required"
+	MsgUserAccountTemporarilyLocked  = "user.account_temporarily_locked"
 	MsgSmsNotConfigured              = "user.sms_not_configured"
 	MsgSmsSendFailed                 = "user.sms_send_failed"
 	MsgUserAgentModeRequired         = "user.agent_mode_required"

@@ -397,7 +397,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		}
 		// 校验 agent plan 的模型白名单（在订阅预扣成功后判断 user_subscription_id 与
 		// 实际请求 model，避免 pre-consume 把白名单外模型也消耗订阅额度）。
-		if common.AgentModeEnabled && relayInfo.OriginModelName != "" {
+		// 通用模式：只要订阅配置了白名单快照即强制执行，与实例开关无关
+		// （IsModelAllowedBySubscription 对空快照放行，存量订阅行为不变）。
+		if relayInfo.OriginModelName != "" {
 			subId := session.relayInfo.SubscriptionId
 			if subId > 0 {
 				ok, mErr := model.IsModelAllowedBySubscription(subId, relayInfo.OriginModelName)
@@ -434,13 +436,8 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	case "subscription_first":
 		fallthrough
 	default:
-		// agent 实例下只看 agent 标签的订阅；主实例维持原行为（任意 sub）。
-		hasSub, subCheckErr := func() (bool, error) {
-			if common.AgentModeEnabled {
-				return model.HasActiveAgentSubscription(relayInfo.UserId)
-			}
-			return model.HasActiveUserSubscription(relayInfo.UserId)
-		}()
+		// 通用模式：统一匹配任意 tag 的活跃订阅（agent tag 订阅同样参与）。
+		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId)
 		if subCheckErr != nil {
 			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}

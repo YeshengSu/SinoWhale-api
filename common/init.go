@@ -114,8 +114,13 @@ func InitEnv() {
 		AliyunSMSTemplateCode = v
 	}
 
-	// Agent 实例模式：独立部署承载 agent 用户（独立 DB/端口）。登录需短信验证、注册强制手机验证、token 强制 agent 标签、网页隐藏登录/注册。
-	AgentModeEnabled = GetEnvOrDefaultBool("AGENT_MODE", false)
+	// AGENT_MODE 实例开关已于 v0.2.0 退役：能力已下沉为通用能力（统一登录三方式、
+	// Token tag 参数化、计费白名单全场景执行）。读取到该环境变量仅打弃用警告，
+	// 行为一律按通用模式运行，不再有任何业务分支。
+	if GetEnvOrDefaultBool("AGENT_MODE", false) {
+		SysLog("[DEPRECATED] AGENT_MODE 已于 v0.2.0 退役，请从环境配置中移除；当前按通用模式运行")
+	}
+	AgentModeEnabled = false // 常量保留一个过渡版本，全部业务引用点已删除
 
 	// Parse requestInterval and set RequestInterval
 	requestInterval, _ = strconv.Atoi(os.Getenv("POLLING_INTERVAL"))
