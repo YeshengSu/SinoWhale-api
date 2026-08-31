@@ -352,6 +352,28 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+	// 注册页强制手机号 + 短信验证码（v0.2.0 退役 AGENT_MODE 时误删，此处恢复）。
+	// 管理员/超管在后台创建的用户不经此路径，不受影响。
+	if user.Phone == "" || user.SmsCode == "" {
+		common.ApiErrorI18nCode(c, i18n.MsgUserPhoneVerificationRequired, "phone_verification_required")
+		return
+	}
+	if !model.IsValidCNPhone(user.Phone) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserPhoneInvalid, "phone_invalid")
+		return
+	}
+	if !common.VerifyCodeWithKey(user.Phone, user.SmsCode, common.SmsVerificationPurpose) {
+		common.ApiErrorI18nCode(c, i18n.MsgUserVerificationCodeError, "verification_code_error")
+		return
+	}
+	if err := model.EnsurePhoneAvailable(user.Phone, 0); err != nil {
+		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
+			common.ApiErrorI18nCode(c, i18n.MsgUserPhoneAlreadyTaken, "phone_already_taken")
+			return
+		}
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+		return
+	}
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
@@ -396,6 +418,7 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
+	cleanUser.Phone = user.Phone
 	if err := cleanUser.Insert(inviterId); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
@@ -418,6 +441,8 @@ func Register(c *gin.Context) {
 		common.ApiError(c, txErr)
 		return
 	}
+	// 注册成功后销毁短信验证码，防止复用
+	common.DeleteKey(user.Phone, common.SmsVerificationPurpose)
 
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {

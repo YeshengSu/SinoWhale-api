@@ -44,6 +44,7 @@ import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { loginFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
+import { useSmsVerification } from '@/features/auth/hooks/use-sms-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { beginPasskeyLogin, finishPasskeyLogin } from '@/features/auth/passkey'
 import type { AuthFormProps } from '@/features/auth/types'
@@ -86,6 +87,58 @@ export function UserAuthForm({
     setTurnstileToken,
     validateTurnstile,
   } = useTurnstile()
+  // Login mode: password (default) or SMS verification code — available to
+  // every user with a registered phone (universal, not agent-gated).
+  const [loginMode, setLoginMode] = useState<'password' | 'sms'>('password')
+  const [smsPhone, setSmsPhone] = useState('')
+  const [smsCode, setSmsCode] = useState('')
+  const {
+    isSending: isSmsSending,
+    secondsLeft: smsSecondsLeft,
+    isActive: isSmsCountdownActive,
+    sendCode: sendLoginSmsCode,
+  } = useSmsVerification({ turnstileToken, validateTurnstile })
+
+  async function handleSendSmsLoginCode() {
+    await sendLoginSmsCode(smsPhone.trim())
+  }
+
+  async function handleSmsLogin() {
+    if (requiresLegalConsent && !agreedToLegal) {
+      toast.error(legalConsentErrorMessage)
+      return
+    }
+    if (!smsPhone.trim()) {
+      toast.error(t('Please enter your phone number first'))
+      return
+    }
+    if (!smsCode.trim()) {
+      toast.error(t('Please enter the verification code'))
+      return
+    }
+    if (!validateTurnstile()) return
+
+    setIsLoading(true)
+    try {
+      const res = await login({
+        phone: smsPhone.trim(),
+        sms_code: smsCode.trim(),
+        turnstile: turnstileToken,
+      })
+      if (res.success) {
+        if (res.data?.require_2fa) {
+          redirectTo2FA()
+          return
+        }
+        await handleLoginSuccess(res.data as { id?: number } | null, redirectTo)
+        toast.success(t('Welcome back!'))
+      }
+    } catch {
+      // Errors are handled by global interceptor
+    } finally {
+      setIsLoading(false)
+    }
+  }
   const { handleLoginSuccess, redirectTo2FA } = useAuthRedirect()
 
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
@@ -168,7 +221,7 @@ export function UserAuthForm({
         await handleLoginSuccess(res.data as { id?: number } | null, redirectTo)
         toast.success(t('Welcome back!'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
@@ -208,7 +261,7 @@ export function UserAuthForm({
       } else {
         toast.error(res?.message || loginFailedMessage)
       }
-    } catch (_error) {
+    } catch {
       toast.error(loginFailedMessage)
     } finally {
       setIsWeChatSubmitting(false)
@@ -283,6 +336,15 @@ export function UserAuthForm({
     }
   }
 
+  let smsSendButtonContent: React.ReactNode = t('Send code')
+  if (isSmsSending) {
+    smsSendButtonContent = <Loader2 className='h-4 w-4 animate-spin' />
+  } else if (isSmsCountdownActive) {
+    smsSendButtonContent = t('Resend ({{seconds}}s)', {
+      seconds: smsSecondsLeft,
+    })
+  }
+
   const alternativeLoginMethods = (
     <>
       {passkeyLoginEnabled && (
@@ -328,7 +390,26 @@ export function UserAuthForm({
       >
         {hasAlternativeLogin && alternativeLoginMethods}
 
-        {passwordLoginEnabled && (
+        {/* Login mode switch: password / SMS verification code (universal) */}
+        <div className='grid grid-cols-2 gap-2'>
+          <Button
+            type='button'
+            variant={loginMode === 'password' ? 'default' : 'outline'}
+            disabled={!passwordLoginEnabled}
+            onClick={() => setLoginMode('password')}
+          >
+            {t('Password login')}
+          </Button>
+          <Button
+            type='button'
+            variant={loginMode === 'sms' ? 'default' : 'outline'}
+            onClick={() => setLoginMode('sms')}
+          >
+            {t('SMS code login')}
+          </Button>
+        </div>
+
+        {passwordLoginEnabled && loginMode === 'password' && (
           <>
             {/* Username Field */}
             <FormField
@@ -377,6 +458,87 @@ export function UserAuthForm({
               type='submit'
               className='mt-2 w-full justify-center gap-2'
               disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+            >
+              {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
+              {t('Sign in')}
+            </Button>
+
+            {/* Turnstile */}
+            {isTurnstileEnabled && (
+              <div className='mt-2'>
+                <Turnstile
+                  siteKey={turnstileSiteKey}
+                  onVerify={setTurnstileToken}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {loginMode === 'sms' && (
+          <>
+            {/* Phone Field */}
+            <div className='grid gap-1'>
+              <Label htmlFor='sms-login-phone'>{t('Phone number')}</Label>
+              <Input
+                id='sms-login-phone'
+                placeholder={t('Enter your phone number')}
+                value={smsPhone}
+                onChange={(event) => setSmsPhone(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void handleSmsLogin()
+                  }
+                }}
+                autoComplete='tel'
+              />
+            </div>
+
+            {/* SMS Code Field */}
+            <div className='grid gap-1'>
+              <Label htmlFor='sms-login-code'>{t('Verification code')}</Label>
+              <div className='flex gap-2'>
+                <Input
+                  id='sms-login-code'
+                  placeholder={t('Enter the verification code')}
+                  value={smsCode}
+                  onChange={(event) => setSmsCode(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void handleSmsLogin()
+                    }
+                  }}
+                  autoComplete='one-time-code'
+                />
+                <Button
+                  variant='outline'
+                  type='button'
+                  disabled={
+                    isLoading ||
+                    isSmsSending ||
+                    isSmsCountdownActive ||
+                    !smsPhone.trim()
+                  }
+                  onClick={handleSendSmsLoginCode}
+                >
+                  {smsSendButtonContent}
+                </Button>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <Button
+              type='button'
+              className='mt-2 w-full justify-center gap-2'
+              disabled={
+                isLoading ||
+                !smsPhone.trim() ||
+                !smsCode.trim() ||
+                (requiresLegalConsent && !agreedToLegal)
+              }
+              onClick={() => void handleSmsLogin()}
             >
               {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
               {t('Sign in')}

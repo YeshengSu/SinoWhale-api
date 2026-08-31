@@ -23,8 +23,12 @@ import type { User } from '@/features/users/types'
 // ============================================================================
 
 export interface LoginPayload {
-  username: string
-  password: string
+  /** 账号密码登录；手机验证码登录时两者省略。 */
+  username?: string
+  password?: string
+  /** 手机验证码登录：Phone + SMS code（全用户通用，与账号密码并存）。 */
+  phone?: string
+  sms_code?: string
   turnstile?: string
 }
 

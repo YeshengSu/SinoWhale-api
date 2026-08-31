@@ -5126,6 +5126,8 @@
     "Please enter the Stripe Price ID": "请输入 Stripe Price ID",
     "Please enter the Creem Product ID": "请输入 Creem Product ID",
     "Please enter the Waffo Pancake Product ID": "请输入 Waffo Pancake Product ID",
-    "0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求": "0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求"
+    "0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求": "0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求",
+    "Password login": "密码登录",
+    "SMS code login": "验证码登录"
   }
 }

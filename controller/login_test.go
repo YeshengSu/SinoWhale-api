@@ -331,7 +331,14 @@ func TestRegisterUniversalUsernamePassword(t *testing.T) {
 	common.RegisterEnabled = true
 	common.PasswordRegisterEnabled = true
 
-	payload, err := common.Marshal(map[string]any{"username": "newuser", "password": "password123"})
+	// 注册页强制手机验证：需手机号 + 预置验证码
+	seedRegisterCode("13600136000", registerTestSmsCode)
+	payload, err := common.Marshal(map[string]any{
+		"username": "newuser",
+		"password": "password123",
+		"phone":    "13600136000",
+		"sms_code": registerTestSmsCode,
+	})
 	require.NoError(t, err, "failed to marshal register body")
 	req := httptest.NewRequest(http.MethodPost, "/api/user/register", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
@@ -344,4 +351,5 @@ func TestRegisterUniversalUsernamePassword(t *testing.T) {
 
 	var stored model.User
 	require.NoError(t, db.First(&stored, "username = ?", "newuser").Error, "registered user should be persisted")
+	require.Equal(t, "13600136000", stored.Phone, "phone should be persisted")
 }

@@ -55,7 +55,7 @@ func GetStatus(c *gin.Context) {
 		"version":                     common.Version,
 		"start_time":                  common.StartTime,
 		"email_verification":          common.EmailVerificationEnabled,
-		"phone_verification":          false, // 通用模式：注册不强制手机验证（保留字段供旧前端读取）
+		"phone_verification":          true, // 注册页强制手机号 + 短信验证码（管理员后台创建用户不经此路径）
 		"agent_mode":                  false, // 已退役的实例开关，恒为 false；前端不再隐藏登录/注册页
 		"github_oauth":                common.GitHubOAuthEnabled,
 		"github_client_id":            common.GitHubClientId,
