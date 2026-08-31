@@ -107,6 +107,30 @@
 
 ## 🚀 クイックスタート
 
+### ソースコードから開発
+
+**プランA：シングルプロセス —— バックエンド開発に推奨**
+
+```bash
+# 初回のみ：依存関係のインストールとフロントエンドのビルド（go:embed に必須）
+bun run setup
+
+# 起動：1 つのプロセスで http://localhost:3000 に UI と API の両方を提供
+bun run dev
+```
+
+**プランB：フロントエンドホットリロード —— フロントエンド開発に推奨**
+
+```bash
+# ターミナル 1 —— バックエンド（http://localhost:3000）
+bun run dev
+
+# ターミナル 2 —— フロントエンド開発サーバー（http://localhost:5173、ホットリロード）
+bun run dev:fe
+```
+
+`/api` リクエストは自動的にバックエンドへプロキシされます。プランC（Docker）などの詳細は[開発ガイド](./docs/development.md)を参照してください。
+
 ### Docker Composeを使用（推奨）
 
 ```bash
@@ -298,6 +322,8 @@ docker run --name new-api -d --restart always \
 
 > [!TIP]
 > **最新のDockerイメージ:** `calciumion/new-api:latest`
+
+**SinoWhale 本番デプロイ：** プライベートイメージ `sinowhalex/swapi` と [`docker-compose.deploy.yml`](./docker-compose.deploy.yml) を使用します。詳細は[デプロイガイド](./docs/deployment.md)を参照してください。
 
 ### 📋 デプロイ要件
 

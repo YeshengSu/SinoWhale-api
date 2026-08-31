@@ -107,6 +107,30 @@
 
 ## 🚀 Quick Start
 
+### Development from Source
+
+**Plan A: Single Process — recommended for backend development**
+
+```bash
+# One-time: install deps and build frontends (required by go:embed)
+bun run setup
+
+# Start: one process on http://localhost:3000 serving both UI and API
+bun run dev
+```
+
+**Plan B: Frontend Hot Reload — recommended for frontend development**
+
+```bash
+# Terminal 1 — backend on http://localhost:3000
+bun run dev
+
+# Terminal 2 — frontend dev server on http://localhost:5173 (hot reload)
+bun run dev:fe
+```
+
+`/api` requests are proxied to the backend automatically. For Plan C (Docker) and more, see the [Development Guide](./docs/development.md).
+
 ### Using Docker Compose (Recommended)
 
 ```bash
@@ -296,6 +320,8 @@ docker run --name new-api -d --restart always \
 
 > [!TIP]
 > **Latest Docker image:** `calciumion/new-api:latest`
+
+**SinoWhale production deployment:** use [`docker-compose.deploy.yml`](./docker-compose.deploy.yml) with the private image `sinowhalex/swapi` — see the [Deployment Guide](./docs/deployment.md).
 
 ### 📋 Deployment Requirements
 

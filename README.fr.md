@@ -107,6 +107,30 @@
 
 ## 🚀 Démarrage rapide
 
+### Développement depuis les sources
+
+**Plan A : Processus unique — recommandé pour le développement backend**
+
+```bash
+# Préparation unique : installer les dépendances et builder les frontends (requis par go:embed)
+bun run setup
+
+# Démarrage : un seul processus sur http://localhost:3000, servant à la fois l'UI et l'API
+bun run dev
+```
+
+**Plan B : Hot reload frontend — recommandé pour le développement frontend**
+
+```bash
+# Terminal 1 — backend sur http://localhost:3000
+bun run dev
+
+# Terminal 2 — serveur de dev frontend sur http://localhost:5173 (hot reload)
+bun run dev:fe
+```
+
+Les requêtes `/api` sont automatiquement proxifiées vers le backend. Pour le Plan C (Docker) et plus, voir le [Guide de développement](./docs/development.md).
+
 ### Utilisation de Docker Compose (recommandé)
 
 ```bash
@@ -296,6 +320,8 @@ docker run --name new-api -d --restart always \
 
 > [!TIP]
 > **Dernière image Docker:** `calciumion/new-api:latest`
+
+**Déploiement SinoWhale en production :** utilisez [`docker-compose.deploy.yml`](./docker-compose.deploy.yml) avec l'image privée `sinowhalex/swapi` — voir le [Guide de déploiement](./docs/deployment.md).
 
 ### 📋 Exigences de déploiement
 

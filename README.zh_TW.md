@@ -107,6 +107,30 @@
 
 ## 🚀 快速開始
 
+### 原始碼開發
+
+**方案 A：單進程運行 —— 後端開發推薦**
+
+```bash
+# 一次性準備：安裝依賴並構建前端（go:embed 必需）
+bun run setup
+
+# 啟動：單進程 http://localhost:3000，同時服務頁面與 API
+bun run dev
+```
+
+**方案 B：前端熱更新 —— 前端開發推薦**
+
+```bash
+# 終端 1 —— 後端（http://localhost:3000）
+bun run dev
+
+# 終端 2 —— 前端 dev server（http://localhost:5173，熱更新）
+bun run dev:fe
+```
+
+`/api` 請求自動代理到後端。方案 C（Docker）及更多見[開發指南](./docs/development.md)。
+
 ### 使用 Docker Compose（推薦）
 
 ```bash
@@ -296,6 +320,8 @@ docker run --name new-api -d --restart always \
 
 > [!TIP]
 > **最新版 Docker 鏡像：** `calciumion/new-api:latest`
+
+**SinoWhale 生產部署：** 使用 [`docker-compose.deploy.yml`](./docker-compose.deploy.yml) 與私有映像 `sinowhalex/swapi`，詳見[部署指南](./docs/deployment.md)。
 
 ### 📋 部署要求
 
