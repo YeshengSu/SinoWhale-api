@@ -5,6 +5,9 @@ set -euo pipefail
 PASS=0
 FAIL=0
 
+# redis 检查需要密码：从 bundle 根目录的 .env.production 读取
+REDIS_PASSWORD="$(grep -E '^REDIS_PASSWORD=' "$(dirname "$0")/../.env.production" 2>/dev/null | cut -d= -f2- || true)"
+
 check() {
   local name="$1"
   local cmd="$2"
@@ -53,7 +56,7 @@ check "postgres-ready" \
   "docker exec swapi-postgres pg_isready -U swapi -d new-api" \
   "accepting"
 check "redis-ping" \
-  "docker exec swapi-redis redis-cli ping" \
+  "docker exec swapi-redis redis-cli -a '$REDIS_PASSWORD' --no-auth-warning ping" \
   "PONG"
 echo ""
 

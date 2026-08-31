@@ -161,7 +161,8 @@ echo "  Admin: https://api.sinxwhalex.com"
 '@
 
 $installScript = $installScript -replace '__VERSION__', $Version
-Set-Content -Path ($BundleDir + "\install.sh") -Value $installScript -Encoding ASCII
+# 强制 LF 行尾：Set-Content 在 Windows 默认写 CRLF，会导致服务器 bash 报 "invalid option name: pipefail"
+[IO.File]::WriteAllText(($BundleDir + "\install.sh"), ($installScript -replace "`r`n", "`n"), [Text.Encoding]::ASCII)
 
 # ========== 8. package ==========
 Write-Host "  Packaging bundle..." -ForegroundColor Yellow
