@@ -416,6 +416,24 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				}
 			}
 		}
+		// 校验 agent plan 的三档窗口额度（5 小时/周/月）。预扣已计入本次请求的
+		// 估算用量，used >= snap 即视为超量；0 表示不限量（CheckUserPlanWindowLimits
+		// 内部跳过）。仅在预扣成功后判断，拒绝即回滚本次预扣。
+		if subId := session.relayInfo.SubscriptionId; subId > 0 {
+			var sub model.UserSubscription
+			if sErr := model.DB.Where("id = ?", subId).First(&sub).Error; sErr == nil {
+				if hit := model.CheckUserPlanWindowLimits(&sub); hit != "" {
+					session.Refund(c)
+					return nil, types.NewErrorWithStatusCode(
+						fmt.Errorf("当前套餐%s额度已用完", hit),
+						types.ErrorCodeInsufficientUserQuota,
+						http.StatusForbidden,
+						types.ErrOptionWithSkipRetry(),
+						types.ErrOptionWithNoRecordErrorLog(),
+					)
+				}
+			}
+		}
 		return session, nil
 	}
 

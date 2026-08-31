@@ -673,6 +673,12 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		PrevUserGroup:       prevGroup,
 		DowngradeGroup:      strings.TrimSpace(plan.DowngradeGroup),
 		AllowWalletOverflow: allowWalletOverflow,
+		Tag:                 plan.Tag,
+		PlanLevel:           plan.PlanLevel,
+		FiveHourLimitSnap:   plan.FiveHourLimit,
+		WeeklyLimitSnap:     plan.WeeklyLimit,
+		MonthlyLimitSnap:    plan.MonthlyLimit,
+		AllowedModelsSnap:   plan.AllowedModels,
 		CreatedAt:           common.GetTimestamp(),
 		UpdatedAt:           common.GetTimestamp(),
 	}
@@ -2016,6 +2022,48 @@ func GetUserPlanUsageSummary(userSubscriptionId int) (fiveHour, weekly, monthly 
 	return fiveHour, weekly, monthly, nil
 }
 
+// CheckUserPlanWindowLimits returns the label of the first window (5 小时/周/月)
+// whose current usage has reached the subscription's snapshot limit, or ""
+// when every window is within quota. Snapshots of 0 mean unlimited and are
+// skipped. Only agent-tagged subscriptions record window usage; other tags
+// are always unrestricted here. Call after subscription pre-consume so the
+// current request's estimated usage is already included.
+func CheckUserPlanWindowLimits(sub *UserSubscription) string {
+	if sub == nil || sub.Id <= 0 || sub.Tag != PlanTagAgent {
+		return ""
+	}
+	now := GetDBTimestamp()
+	check := func(periodType string, limit int64, label string) (string, error) {
+		if limit <= 0 {
+			return "", nil
+		}
+		start, _, err := ComputeCurrentPeriod(periodType, sub.StartTime, now, time.Local)
+		if err != nil {
+			return "", err
+		}
+		var row UserPlanUsage
+		err = DB.Where("user_subscription_id = ? AND period_type = ? AND period_start = ?",
+			sub.Id, periodType, start).First(&row).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", err
+		}
+		if err == nil && row.QuotaUsed >= limit {
+			return label, nil
+		}
+		return "", nil
+	}
+	if hit, err := check(UserPlanUsagePeriodFiveHour, sub.FiveHourLimitSnap, "5 小时"); err == nil && hit != "" {
+		return hit
+	}
+	if hit, err := check(UserPlanUsagePeriodWeekly, sub.WeeklyLimitSnap, "周"); err == nil && hit != "" {
+		return hit
+	}
+	if hit, err := check(UserPlanUsagePeriodMonthly, sub.MonthlyLimitSnap, "月"); err == nil && hit != "" {
+		return hit
+	}
+	return ""
+}
+
 // ResetDueUserPlanUsage deletes usage rows whose period has ended more than
 // retainSeconds ago. Called from the periodic reset task.
 func ResetDueUserPlanUsage(retainSeconds int64) (int64, error) {
@@ -2067,16 +2115,8 @@ func UpgradeUserSubscriptionTx(tx *gorm.DB, userId int, oldSub *UserSubscription
 	if err != nil {
 		return nil, err
 	}
-	newSub.UpgradeFromId = 0
 	if oldSub != nil && oldSub.Id > 0 {
 		newSub.UpgradeFromId = oldSub.Id
-		// 快照旧 plan 的 agent 字段（即使没有也复制空值，保持一致）
-		newSub.Tag = newPlan.Tag
-		newSub.PlanLevel = newPlan.PlanLevel
-		newSub.FiveHourLimitSnap = newPlan.FiveHourLimit
-		newSub.WeeklyLimitSnap = newPlan.WeeklyLimit
-		newSub.MonthlyLimitSnap = newPlan.MonthlyLimit
-		newSub.AllowedModelsSnap = newPlan.AllowedModels
 		if err := tx.Save(newSub).Error; err != nil {
 			return nil, err
 		}
@@ -2085,16 +2125,6 @@ func UpgradeUserSubscriptionTx(tx *gorm.DB, userId int, oldSub *UserSubscription
 		oldSub.EndTime = now
 		oldSub.UpdatedAt = now
 		if err := tx.Save(oldSub).Error; err != nil {
-			return nil, err
-		}
-	} else {
-		newSub.Tag = newPlan.Tag
-		newSub.PlanLevel = newPlan.PlanLevel
-		newSub.FiveHourLimitSnap = newPlan.FiveHourLimit
-		newSub.WeeklyLimitSnap = newPlan.WeeklyLimit
-		newSub.MonthlyLimitSnap = newPlan.MonthlyLimit
-		newSub.AllowedModelsSnap = newPlan.AllowedModels
-		if err := tx.Save(newSub).Error; err != nil {
 			return nil, err
 		}
 	}

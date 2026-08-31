@@ -532,6 +532,12 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`total_amount`" + ` bigint NOT NULL DEFAULT 0,
 ` + "`quota_reset_period`" + ` varchar(16) DEFAULT 'never',
 ` + "`quota_reset_custom_seconds`" + ` bigint DEFAULT 0,
+` + "`tag`" + ` varchar(32) DEFAULT '',
+` + "`plan_level`" + ` varchar(16) DEFAULT '',
+` + "`five_hour_limit`" + ` bigint DEFAULT 0,
+` + "`weekly_limit`" + ` bigint DEFAULT 0,
+` + "`monthly_limit`" + ` bigint DEFAULT 0,
+` + "`allowed_models`" + ` text DEFAULT '',
 ` + "`created_at`" + ` bigint,
 ` + "`updated_at`" + ` bigint,
 PRIMARY KEY (` + "`id`" + `)

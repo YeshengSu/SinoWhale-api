@@ -380,6 +380,13 @@ func TokenAuth() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusInternalServerError,
 					common.TranslateMessage(c, i18n.MsgDatabaseError))
 			} else {
+				// TEMP DIAGNOSTIC (local 401 investigation): log the shape of the
+				// rejected credential — prefix only, never the full key.
+				prefix := key
+				if len(prefix) > 10 {
+					prefix = prefix[:10]
+				}
+				common.SysLog(fmt.Sprintf("TokenAuth reject: presented key len=%d prefix=%q client=%s", len(key), prefix, c.ClientIP()))
 				abortWithOpenAiMessage(c, http.StatusUnauthorized,
 					common.TranslateMessage(c, i18n.MsgTokenInvalid))
 			}
