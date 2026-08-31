@@ -5115,6 +5115,17 @@
     "0 = 不限（每 5 小时桶）": "0 = 不限（每 5 小时桶）",
     "0 = 不限（自然周）": "0 = 不限（自然周）",
     "0 = 不限（购买日起 30 天滚动）；>0 时与 Quota 同时生效": "0 = 不限（购买日起 30 天滚动）；>0 时与 Quota 同时生效",
-    "每行一条：<model> <ratio>。空 = 不限制模型。比率为该套餐用户调用此模型时的扣费倍率。": "每行一条：<model> <ratio>。空 = 不限制模型。比率为该套餐用户调用此模型时的扣费倍率。"
+    "每行一条：<model> <ratio>。空 = 不限制模型。比率为该套餐用户调用此模型时的扣费倍率。": "每行一条：<model> <ratio>。空 = 不限制模型。比率为该套餐用户调用此模型时的扣费倍率。",
+    "Models & Quota": "Models & Quota",
+    "Search or add models...": "Search or add models...",
+    "Models come from your configured channels; you can also type a custom model name. Empty means no restriction.": "Models come from your configured channels; you can also type a custom model name. Empty means no restriction.",
+    "Enable Stripe payment": "Enable Stripe payment",
+    "Enable Creem payment": "Enable Creem payment",
+    "Enable Waffo Pancake payment": "Enable Waffo Pancake payment",
+    "Epay uses the global payment settings and needs no per-plan configuration.": "Epay uses the global payment settings and needs no per-plan configuration.",
+    "Please enter the Stripe Price ID": "Please enter the Stripe Price ID",
+    "Please enter the Creem Product ID": "Please enter the Creem Product ID",
+    "Please enter the Waffo Pancake Product ID": "Please enter the Waffo Pancake Product ID",
+    "0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求": "0 = unlimited (30-day rolling from purchase date); values >0 reject requests over quota."
   }
 }

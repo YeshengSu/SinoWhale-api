@@ -17,13 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  Bot,
-  CalendarClock,
-  CreditCard,
-  RefreshCw,
-  Settings2,
-} from 'lucide-react'
+import { Bot, CreditCard, Settings2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +32,7 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
+import { MultiSelect, type Option } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -66,17 +62,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 
+import { getEnabledModels } from '@/features/channels/api'
 import {
   createPlan,
   updatePlan,
-  getGroups,
   createWaffoPancakeSubscriptionProduct,
   listWaffoPancakeSubscriptionProductOptions,
 } from '../api'
-import { getDurationUnitOptions, getResetPeriodOptions } from '../constants'
 import {
   getPlanFormSchema,
   PLAN_FORM_DEFAULTS,
@@ -101,11 +94,7 @@ export function SubscriptionsMutateDrawer({
   const { t } = useTranslation()
   const isEdit = !!currentRow?.plan?.id
   const { triggerRefresh } = useSubscriptions()
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const tokensOnly = currencyMeta.kind === 'tokens'
-  const currencyLabel = getCurrencyLabel()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [groupOptions, setGroupOptions] = useState<string[]>([])
   const [creatingPancakeProduct, setCreatingPancakeProduct] = useState(false)
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
@@ -124,11 +113,6 @@ export function SubscriptionsMutateDrawer({
       } else {
         form.reset(PLAN_FORM_DEFAULTS)
       }
-      getGroups()
-        .then((res) => {
-          if (res.success) setGroupOptions(res.data || [])
-        })
-        .catch(() => {})
       // Best-effort — empty list still lets the operator use "+ Create".
       listWaffoPancakeSubscriptionProductOptions()
         .then((res) => {
@@ -149,8 +133,6 @@ export function SubscriptionsMutateDrawer({
     }
   }, [open, currentRow, form])
 
-  const durationUnit = form.watch('duration_unit')
-  const resetPeriod = form.watch('quota_reset_period')
   // Gate "+ Create on Pancake" on the same checks the mint handler runs.
   const watchedTitle = form.watch('title')
   const watchedPrice = form.watch('price_amount')
@@ -158,6 +140,21 @@ export function SubscriptionsMutateDrawer({
     typeof watchedTitle === 'string' &&
     watchedTitle.trim().length > 0 &&
     Number(watchedPrice ?? 0) > 0
+
+  const payStripe = form.watch('pay_stripe_enabled')
+  const payCreem = form.watch('pay_creem_enabled')
+  const payWaffo = form.watch('pay_waffo_enabled')
+
+  // Model options come from the enabled channels (abilities table) so a plan
+  // can only grant models the backend actually routes.
+  const enabledModelsQuery = useQuery({
+    queryKey: ['channel_models_enabled'],
+    queryFn: getEnabledModels,
+    enabled: open,
+  })
+  const modelOptions: Option[] = (enabledModelsQuery.data?.data ?? []).map(
+    (m) => ({ label: m, value: m })
+  )
 
   const onSubmit = async (values: PlanFormValues) => {
     setIsSubmitting(true)
@@ -251,8 +248,33 @@ export function SubscriptionsMutateDrawer({
     }
   }
 
-  const durationUnitOpts = getDurationUnitOptions(t)
-  const resetPeriodOpts = getResetPeriodOptions(t)
+  const quotaLimitField = (
+    name: 'five_hour_limit' | 'weekly_limit' | 'monthly_limit',
+    label: string,
+    description: string
+  ) => (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Input
+              {...field}
+              type='number'
+              min={0}
+              onChange={(e) =>
+                field.onChange(Number.parseInt(e.target.value, 10) || 0)
+              }
+            />
+          </FormControl>
+          <FormDescription>{description}</FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
 
   return (
     <Sheet
@@ -304,23 +326,6 @@ export function SubscriptionsMutateDrawer({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name='subtitle'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Plan Subtitle')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder={t('e.g. Suitable for light usage')}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
                   control={form.control}
@@ -335,7 +340,7 @@ export function SubscriptionsMutateDrawer({
                           step='0.01'
                           min={0}
                           onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
+                            field.onChange(Number.parseFloat(e.target.value) || 0)
                           }
                         />
                       </FormControl>
@@ -351,194 +356,107 @@ export function SubscriptionsMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='total_amount'
+                  name='plan_level'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        {t('Quota ({{currency}})', { currency: currencyLabel })}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          min={0}
-                          step={tokensOnly ? 1 : 0.01}
-                          placeholder={
-                            tokensOnly
-                              ? t('Enter quota in tokens')
-                              : t('Enter quota in {{currency}}', {
-                                  currency: currencyLabel,
-                                })
-                          }
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
-                          }
-                        />
-                      </FormControl>
+                      <FormLabel>{t('Plan Level')}</FormLabel>
+                      <Select
+                        items={[
+                          { value: 'lite', label: t('Lite (入门版)') },
+                          { value: 'plus', label: t('Plus (标准版)') },
+                          { value: 'max', label: t('Max (旗舰版)') },
+                        ]}
+                        onValueChange={field.onChange}
+                        value={field.value || 'plus'}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t('Plus (标准版)')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='lite'>
+                              {t('Lite (入门版)')}
+                            </SelectItem>
+                            <SelectItem value='plus'>
+                              {t('Plus (标准版)')}
+                            </SelectItem>
+                            <SelectItem value='max'>
+                              {t('Max (旗舰版)')}
+                            </SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                       <FormDescription>
-                        {t(
-                          'Total quota included in the plan, usable per billing period. 0 means unlimited.'
-                        )}
+                        {t('用于升级排序：lite < plus < max；不允许降级')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+            </SideDrawerSection>
 
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                <FormField
-                  control={form.control}
-                  name='upgrade_group'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Upgrade Group')}</FormLabel>
-                      <Select
-                        items={[
-                          { value: '__none__', label: t('No Upgrade') },
-                          ...groupOptions.map((g) => ({ value: g, label: g })),
-                        ]}
-                        onValueChange={(v) =>
-                          field.onChange(v === '__none__' ? '' : v)
-                        }
-                        value={field.value || ''}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t('No Upgrade')} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            <SelectItem value='__none__'>
-                              {t('No Upgrade')}
-                            </SelectItem>
-                            {groupOptions.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='downgrade_group'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Downgrade Group')}</FormLabel>
-                      <Select
-                        items={[
-                          {
-                            value: '__none__',
-                            label: t('Downgrade to pre-purchase group'),
-                          },
-                          ...groupOptions.map((g) => ({ value: g, label: g })),
-                        ]}
-                        onValueChange={(v) =>
-                          field.onChange(v === '__none__' ? '' : v)
-                        }
-                        value={field.value || ''}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue
-                              placeholder={t('Downgrade to pre-purchase group')}
-                            />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            <SelectItem value='__none__'>
-                              {t('Downgrade to pre-purchase group')}
-                            </SelectItem>
-                            {groupOptions.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        {t(
-                          'Downgrade to this group after the subscription expires'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='max_purchase_per_user'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Purchase Limit')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          min={0}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10) || 0)
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t('0 means unlimited')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+            {/* Models & Quota */}
+            <SideDrawerSection>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <Bot className='h-4 w-4' />
+                {t('Models & Quota')}
+              </h3>
 
               <FormField
                 control={form.control}
-                name='sort_order'
+                name='allowed_models'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Sort Order')}</FormLabel>
+                    <FormLabel>{t('Allowed models')}</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        type='number'
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value, 10) || 0)
-                        }
+                      <MultiSelect
+                        options={modelOptions}
+                        selected={field.value ?? []}
+                        onChange={field.onChange}
+                        allowCreate
+                        placeholder={t('Search or add models...')}
                       />
                     </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Models come from your configured channels; you can also type a custom model name. Empty means no restriction.'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className='flex flex-col gap-3'>
-                <FormField
-                  control={form.control}
-                  name='enabled'
-                  render={({ field }) => (
-                    <FormItem className={sideDrawerSwitchItemClassName()}>
-                      <FormLabel className='!mt-0'>
-                        {t('Enabled Status')}
-                      </FormLabel>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+                {quotaLimitField(
+                  'five_hour_limit',
+                  t('5-hour quota cap'),
+                  t('0 = 不限（每 5 小时桶）')
+                )}
+                {quotaLimitField(
+                  'weekly_limit',
+                  t('Weekly quota cap'),
+                  t('0 = 不限（自然周）')
+                )}
+                {quotaLimitField(
+                  'monthly_limit',
+                  t('Monthly quota cap'),
+                  t('0 = 不限（购买日起 30 天滚动）；>0 时超量拒绝请求')
+                )}
+              </div>
+            </SideDrawerSection>
 
+            {/* Payment */}
+            <SideDrawerSection>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <CreditCard className='h-4 w-4' />
+                {t('Third-party Payment Config')}
+              </h3>
+
+              <div className='flex flex-col gap-3'>
                 <FormField
                   control={form.control}
                   name='allow_balance_pay'
@@ -559,11 +477,11 @@ export function SubscriptionsMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='allow_wallet_overflow'
+                  name='pay_stripe_enabled'
                   render={({ field }) => (
                     <FormItem className={sideDrawerSwitchItemClassName()}>
                       <FormLabel className='!mt-0'>
-                        {t('Allow wallet balance after quota used up')}
+                        {t('Enable Stripe payment')}
                       </FormLabel>
                       <FormControl>
                         <Switch
@@ -574,478 +492,147 @@ export function SubscriptionsMutateDrawer({
                     </FormItem>
                   )}
                 />
-              </div>
-            </SideDrawerSection>
-
-            {/* Duration Settings */}
-            <SideDrawerSection>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <CalendarClock className='h-4 w-4' />
-                {t('Duration Settings')}
-              </h3>
-
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                <FormField
-                  control={form.control}
-                  name='duration_unit'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Duration Unit')}</FormLabel>
-                      <Select
-                        items={[
-                          ...durationUnitOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            {durationUnitOpts.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {durationUnit === 'custom' ? (
+                {payStripe && (
                   <FormField
                     control={form.control}
-                    name='custom_seconds'
+                    name='stripe_price_id'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Custom Seconds')}</FormLabel>
+                        <FormLabel>Stripe Price ID</FormLabel>
                         <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={1}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name='duration_value'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Duration Value')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={1}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
-                            }
-                          />
+                          <Input {...field} placeholder='price_...' />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 )}
-              </div>
-            </SideDrawerSection>
-
-            {/* Quota Reset */}
-            <SideDrawerSection>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <RefreshCw className='h-4 w-4' />
-                {t('Quota Reset')}
-              </h3>
-
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                <FormField
-                  control={form.control}
-                  name='quota_reset_period'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Reset Cycle')}</FormLabel>
-                      <Select
-                        items={[
-                          ...resetPeriodOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            {resetPeriodOpts.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
                 <FormField
                   control={form.control}
-                  name='quota_reset_custom_seconds'
+                  name='pay_creem_enabled'
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Custom Seconds')}</FormLabel>
+                    <FormItem className={sideDrawerSwitchItemClassName()}>
+                      <FormLabel className='!mt-0'>
+                        {t('Enable Creem payment')}
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          min={0}
-                          disabled={resetPeriod !== 'custom'}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10) || 0)
-                          }
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
                         />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
-            </SideDrawerSection>
-
-            {/* Payment Config */}
-            <SideDrawerSection>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <CreditCard className='h-4 w-4' />
-                {t('Third-party Payment Config')}
-              </h3>
-
-              <FormField
-                control={form.control}
-                name='stripe_price_id'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Stripe Price ID</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder='price_...' />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='creem_product_id'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Creem Product ID</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder='prod_...' />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='waffo_pancake_product_id'
-                render={({ field }) => {
-                  // Raw-ID fallback for IDs not yet in the catalog.
-                  const items = pancakeProducts.map((p) => ({
-                    value: p.id,
-                    label: `${p.name} (${p.id})`,
-                  }))
-                  if (
-                    field.value &&
-                    !pancakeProducts.some((p) => p.id === field.value)
-                  ) {
-                    items.push({ value: field.value, label: field.value })
-                  }
-                  return (
-                    <FormItem>
-                      <FormLabel>Waffo Pancake Product ID</FormLabel>
-                      <div className='flex gap-2'>
-                        <Select
-                          items={items}
-                          value={field.value || ''}
-                          onValueChange={(v) => field.onChange(v)}
-                          disabled={items.length === 0}
-                        >
-                          <SelectTrigger className='w-full flex-1'>
-                            <SelectValue placeholder={t('Select a product')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {items.map((item) => (
-                              <SelectItem key={item.value} value={item.value}>
-                                {item.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          onClick={handleCreatePancakeProduct}
-                          disabled={
-                            creatingPancakeProduct || !pancakeCreateReady
-                          }
-                          className='shrink-0'
-                        >
-                          {creatingPancakeProduct
-                            ? t('Creating...')
-                            : `+ ${t('Create')}`}
-                        </Button>
-                      </div>
-                      <FormDescription>
-                        {t(
-                          'Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )
-                }}
-              />
-            </SideDrawerSection>
-
-            {/* Agent Plan Settings — Lite / Plus / Max 套餐配置。
-                字段总是显示：主实例管理员也可在此录入 tag=agent 的套餐供 Agent 实例复用。*/}
-            <SideDrawerSection>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <Bot className='h-4 w-4' />
-                {t('Agent Plan Settings')}
-              </h3>
-
-              <FormDescription className='-mt-1'>
-                {t(
-                  'Lite / Plus / Max 套餐配置。Agent 实例的用量包由这里统一管理。'
-                )}
-              </FormDescription>
-
-                <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                {payCreem && (
                   <FormField
                     control={form.control}
-                    name='tag'
+                    name='creem_product_id'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Plan Tag')}</FormLabel>
-                        <Select
-                          items={[
-                            { value: '__none__', label: t('No tag') },
-                            { value: 'agent', label: t('Agent') },
-                          ]}
-                          onValueChange={(v) =>
-                            field.onChange(v === '__none__' ? '' : v)
-                          }
-                          value={field.value || ''}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t('No tag')} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent alignItemWithTrigger={false}>
-                            <SelectGroup>
-                              <SelectItem value='__none__'>
-                                {t('No tag')}
-                              </SelectItem>
-                              <SelectItem value='agent'>
-                                {t('Agent')}
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          {t(
-                            'agent：仅 Agent 实例使用此套餐；留空则主实例与 Agent 实例通用'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='plan_level'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Plan Level')}</FormLabel>
-                        <Select
-                          items={[
-                            { value: '__none__', label: t('No level') },
-                            { value: 'lite', label: t('Lite (入门版)') },
-                            { value: 'plus', label: t('Plus (标准版)') },
-                            { value: 'max', label: t('Max (旗舰版)') },
-                          ]}
-                          onValueChange={(v) =>
-                            field.onChange(v === '__none__' ? '' : v)
-                          }
-                          value={field.value || ''}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t('No level')} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent alignItemWithTrigger={false}>
-                            <SelectGroup>
-                              <SelectItem value='__none__'>
-                                {t('No level')}
-                              </SelectItem>
-                              <SelectItem value='lite'>
-                                {t('Lite (入门版)')}
-                              </SelectItem>
-                              <SelectItem value='plus'>
-                                {t('Plus (标准版)')}
-                              </SelectItem>
-                              <SelectItem value='max'>
-                                {t('Max (旗舰版)')}
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          {t(
-                            '用于升级排序：lite < plus < max；不允许降级'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='five_hour_limit'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('5-hour quota cap')}</FormLabel>
+                        <FormLabel>Creem Product ID</FormLabel>
                         <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={0}
-                            onChange={(e) =>
-                              field.onChange(
-                                parseInt(e.target.value, 10) || 0
-                              )
-                            }
-                          />
+                          <Input {...field} placeholder='prod_...' />
                         </FormControl>
-                        <FormDescription>
-                          {t('0 = 不限（每 5 小时桶）')}
-                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name='weekly_limit'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Weekly quota cap')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={0}
-                            onChange={(e) =>
-                              field.onChange(
-                                parseInt(e.target.value, 10) || 0
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('0 = 不限（自然周）')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='monthly_limit'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Monthly quota cap')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={0}
-                            onChange={(e) =>
-                              field.onChange(
-                                parseInt(e.target.value, 10) || 0
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            '0 = 不限（购买日起 30 天滚动）；>0 时与 Quota 同时生效'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                )}
 
                 <FormField
                   control={form.control}
-                  name='allowed_models'
+                  name='pay_waffo_enabled'
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Allowed models')}</FormLabel>
+                    <FormItem className={sideDrawerSwitchItemClassName()}>
+                      <FormLabel className='!mt-0'>
+                        {t('Enable Waffo Pancake payment')}
+                      </FormLabel>
                       <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={5}
-                          placeholder={'gpt-4 1.0\ngpt-3.5-turbo 0.5'}
-                          className='font-mono text-xs'
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
                         />
                       </FormControl>
-                      <FormDescription>
-                        {t(
-                          '每行一条：<model> <ratio>。空 = 不限制模型。比率为该套餐用户调用此模型时的扣费倍率。'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
-              </SideDrawerSection>
+                {payWaffo && (
+                  <FormField
+                    control={form.control}
+                    name='waffo_pancake_product_id'
+                    render={({ field }) => {
+                      // Raw-ID fallback for IDs not yet in the catalog.
+                      const items = pancakeProducts.map((p) => ({
+                        value: p.id,
+                        label: `${p.name} (${p.id})`,
+                      }))
+                      if (
+                        field.value &&
+                        !pancakeProducts.some((p) => p.id === field.value)
+                      ) {
+                        items.push({ value: field.value, label: field.value })
+                      }
+                      return (
+                        <FormItem>
+                          <FormLabel>Waffo Pancake Product ID</FormLabel>
+                          <div className='flex gap-2'>
+                            <Select
+                              items={items}
+                              value={field.value || ''}
+                              onValueChange={(v) => field.onChange(v)}
+                              disabled={items.length === 0}
+                            >
+                              <SelectTrigger className='w-full flex-1'>
+                                <SelectValue
+                                  placeholder={t('Select a product')}
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {items.map((item) => (
+                                  <SelectItem
+                                    key={item.value}
+                                    value={item.value}
+                                  >
+                                    {item.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              onClick={handleCreatePancakeProduct}
+                              disabled={
+                                creatingPancakeProduct || !pancakeCreateReady
+                              }
+                              className='shrink-0'
+                            >
+                              {creatingPancakeProduct
+                                ? t('Creating...')
+                                : `+ ${t('Create')}`}
+                            </Button>
+                          </div>
+                          <FormDescription>
+                            {t(
+                              'Creates a Pancake product in the saved store using this plan’s title and price. Requires Waffo Pancake to be fully configured in Payment settings first.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )
+                    }}
+                  />
+                )}
+
+                <FormDescription>
+                  {t(
+                    'Epay uses the global payment settings and needs no per-plan configuration.'
+                  )}
+                </FormDescription>
+              </div>
+            </SideDrawerSection>
           </form>
         </Form>
         <SheetFooter className={sideDrawerFooterClassName()}>
