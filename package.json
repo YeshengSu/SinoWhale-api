@@ -1,0 +1,12 @@
+{
+  "name": "sinowhale-api",
+  "private": true,
+  "scripts": {
+    "setup": "cd web && bun install && cd default && bun run build && cd ../classic && bun run build",
+    "install:web": "cd web && bun install",
+    "build:fe": "cd web/default && bun run build && cd ../classic && bun run build",
+    "dev": "go run main.go",
+    "dev:fe": "cd web/default && bun run dev -- --port 5173",
+    "dev:fe:classic": "cd web/classic && bun run dev -- --port 5174"
+  }
+}
