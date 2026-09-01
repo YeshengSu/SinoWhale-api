@@ -1,6 +1,8 @@
 package common
 
 import (
+	"crypto/rand"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +34,25 @@ func GenerateVerificationCode(length int) string {
 		return code
 	}
 	return code[:length]
+}
+
+// GenerateNumericCode returns a cryptographically random code consisting of
+// digits only. Aliyun SMS templates registered as 数字验证码 reject template
+// variables containing letters, so SMS verification codes must use this.
+func GenerateNumericCode(length int) string {
+	if length <= 0 {
+		return ""
+	}
+	digits := make([]byte, length)
+	for i := range digits {
+		n, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			// crypto/rand 失败几乎不可能发生；兜底退化为伪随机，仍保持数字格式
+			n = big.NewInt(int64(time.Now().UnixNano() % 10))
+		}
+		digits[i] = byte('0' + n.Int64())
+	}
+	return string(digits)
 }
 
 func RegisterVerificationCodeWithKey(key string, code string, purpose string) {

@@ -318,7 +318,7 @@ func SendSmsVerification(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		code := common.GenerateVerificationCode(6)
+		code := common.GenerateNumericCode(6)
 		if err := common.SendSmsCode(phone, code); err != nil {
 			if errors.Is(err, common.ErrSmsNotConfigured) {
 				common.ApiErrorI18n(c, i18n.MsgSmsNotConfigured)
@@ -350,7 +350,7 @@ func SendSmsVerification(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	code := common.GenerateVerificationCode(6)
+	code := common.GenerateNumericCode(6)
 	if err := common.SendSmsCode(phone, code); err != nil {
 		if errors.Is(err, common.ErrSmsNotConfigured) {
 			common.ApiErrorI18n(c, i18n.MsgSmsNotConfigured)
