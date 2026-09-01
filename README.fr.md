@@ -434,6 +434,19 @@ docker run --name new-api -d --restart always \
 
 ---
 
+## 🔄 Synchronisation amont (maintenance du fork)
+
+Ce dépôt est un fork privé de [QuantumNous/new-api](https://github.com/QuantumNous/new-api) ; la base de synchronisation amont est enregistrée dans [`upstream.lock.json`](./upstream.lock.json) (le tag pour lecture humaine, le SHA du commit comme ancre machine). Les tags amont n'entrent jamais dans l'espace de noms des tags locaux — seuls nos propres tags `v*` sont conservés localement.
+
+```powershell
+powershell -File scripts/sync-upstream.ps1 -Check   # Vérification en lecture seule : nombre de releases de retard, validation de la dérive de la base
+powershell -File scripts/sync-upstream.ps1 -To v1.0.0-rc.30   # Met à jour la base vers le tag amont spécifié (confirmation interactive, pas de merge automatique)
+```
+
+Le merge des modifications amont et la résolution des conflits restent toujours des étapes manuelles — [`scripts/sync-upstream.ps1`](./scripts/sync-upstream.ps1) se contente de vérifier, comparer et enregistrer. Plan complet : [`docs/plans/2026-09-01-upstream-baseline-lock.md`](./docs/plans/2026-09-01-upstream-baseline-lock.md)
+
+---
+
 ## 🔗 Projets connexes
 
 ### Projets en amont

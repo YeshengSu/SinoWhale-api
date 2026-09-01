@@ -434,6 +434,19 @@ docker run --name new-api -d --restart always \
 
 ---
 
+## 🔄 上游同步（Fork 維護）
+
+本倉庫是 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 的私有 fork，上游同步基線記錄在 [`upstream.lock.json`](./upstream.lock.json)（tag 供人閱讀，commit SHA 為機器錨點）。上游 tag 永不進入本地 tag 命名空間，本地僅保留自有 `v*` tag。
+
+```powershell
+powershell -File scripts/sync-upstream.ps1 -Check   # 唯讀檢查：落後多少 release、基線漂移校驗
+powershell -File scripts/sync-upstream.ps1 -To v1.0.0-rc.30   # 更新基線到指定上游 tag（互動確認，不自動 merge）
+```
+
+merge 上游變更與衝突解決始終是人工步驟——[`scripts/sync-upstream.ps1`](./scripts/sync-upstream.ps1) 只負責查、比、記。方案全文：[`docs/plans/2026-09-01-upstream-baseline-lock.md`](./docs/plans/2026-09-01-upstream-baseline-lock.md)
+
+---
+
 ## 🔗 相關項目
 
 ### 上游項目

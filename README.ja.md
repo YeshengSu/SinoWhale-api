@@ -434,6 +434,19 @@ docker run --name new-api -d --restart always \
 
 ---
 
+## 🔄 上流同期（フォークメンテナンス）
+
+本リポジトリは [QuantumNous/new-api](https://github.com/QuantumNous/new-api) のプライベートフォークです。上流同期のベースラインは [`upstream.lock.json`](./upstream.lock.json) に記録されます（tag は人間向け、commit SHA が機械アンカー）。上流 tag はローカルの tag 名前空間に一切取り込まず、ローカルには独自の `v*` tag のみを保持します。
+
+```powershell
+powershell -File scripts/sync-upstream.ps1 -Check   # 読み取り専用チェック：どれだけ release が遅れているか、ベースラインのずれ検証
+powershell -File scripts/sync-upstream.ps1 -To v1.0.0-rc.30   # ベースラインを指定した上流 tag に更新（対話確認、自動 merge なし）
+```
+
+上流変更の merge とコンフリクト解消は常に手動作業です。[`scripts/sync-upstream.ps1`](./scripts/sync-upstream.ps1) は確認・比較・記録のみを行います。設計全文：[`docs/plans/2026-09-01-upstream-baseline-lock.md`](./docs/plans/2026-09-01-upstream-baseline-lock.md)
+
+---
+
 ## 🔗 関連プロジェクト
 
 ### 上流プロジェクト

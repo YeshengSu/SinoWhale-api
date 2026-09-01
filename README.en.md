@@ -427,6 +427,19 @@ docker run --name new-api -d --restart always \
 
 ---
 
+## 🔄 Upstream Sync (Fork Maintenance)
+
+This repository is a private fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api); the upstream sync baseline is recorded in [`upstream.lock.json`](./upstream.lock.json) (tag for humans, commit SHA as the machine anchor). Upstream tags never enter the local tag namespace — only our own `v*` tags are kept locally.
+
+```powershell
+powershell -File scripts/sync-upstream.ps1 -Check   # Read-only check: how many releases behind, baseline drift validation
+powershell -File scripts/sync-upstream.ps1 -To v1.0.0-rc.30   # Update the baseline to the given upstream tag (interactive confirmation, no auto merge)
+```
+
+Merging upstream changes and resolving conflicts is always a manual step — [`scripts/sync-upstream.ps1`](./scripts/sync-upstream.ps1) only checks, compares, and records. Full design: [`docs/plans/2026-09-01-upstream-baseline-lock.md`](./docs/plans/2026-09-01-upstream-baseline-lock.md)
+
+---
+
 ## 🔗 Related Projects
 
 ### Upstream Projects
