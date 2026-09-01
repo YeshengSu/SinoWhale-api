@@ -13,7 +13,8 @@
     (no arguments)  same as -Check
     -Check          read-only report: current baseline, upstream latest
                     release, how many releases the baseline is behind, and a
-                    merge-base ancestor validation of the baseline commit.
+                    tag-to-commit pairing validation of the baseline record
+                    (lock.commit must match the tag's real upstream target).
                     Never writes the lock file.
     -To <tag>       move the baseline to the given upstream tag after an
                     interactive confirmation, then print the manual merge
@@ -234,11 +235,11 @@ try {
             }
             Write-Info "Behind baseline by $behind upstream release(s)."
         }
-        $ancestor = Invoke-Git @("merge-base", "--is-ancestor", $BaselineCommit, "HEAD")
-        if ($ancestor.ExitCode -eq 0) {
-            Write-Info "baseline commit $($BaselineCommit.Substring(0, 9)) is ancestor of HEAD"
+        $upstreamSha = Get-TagCommit $BaselineTag
+        if ($upstreamSha -and $upstreamSha -eq $BaselineCommit) {
+            Write-Info "baseline commit $($BaselineCommit.Substring(0, 9)) matches upstream $BaselineTag"
         } else {
-            Write-Warn "baseline drift: $($BaselineCommit.Substring(0, 9)) is not an ancestor of HEAD."
+            Write-Warn "baseline drift: lock.commit does not match upstream $BaselineTag (tampered lock or moved/deleted tag)."
             exit 1
         }
         exit 0

@@ -68,7 +68,7 @@ PowerShell 5.1 兼容，与参考方案 `sync-upstream.ps1` 同构。
    - 解析 `^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$`
    - prerelease 按点分段比较：数字段数值比较（解决 `v1.0.0-rc.9 < v1.0.0-rc.30`），字母段字典序
    - 无法解析的 tag（如 `v0.8.8.5.1` 五段式）跳过并 `WARN`
-5. `-Check`：输出当前基线 tag/commit → 上游最新 tag、落后 release 数、`lock.commit` 是否仍为当前 fork 基线的祖先（`git merge-base --is-ancestor`，失败则警告基线漂移）
+5. `-Check`：输出当前基线 tag/commit → 上游最新 tag、落后 release 数、`lock.commit` 是否等于上游 `<tag>` 的真实指向（ls-remote 解析 peeled commit 做配对校验，校验锁记录真实性；不一致或 tag 不存在则警告基线漂移）
 6. `-To <tag>`：交互确认后更新锁文件（tag + commit + syncedAt），打印：
    ```
    人工 merge 指引：
